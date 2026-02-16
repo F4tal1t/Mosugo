@@ -6,40 +6,18 @@ import (
 	"fyne.io/fyne/v2/canvas"
 )
 
-// Now accepts offset and zoom to render dynamic grid
-func DotGridPattern(c *MosugoCanvas, gridSize int, dotColor, bgColor color.Color) *canvas.Raster {
+func BoxGridPattern(c *MosugoCanvas, gridSize int, lineColor, bgColor color.Color) *canvas.Raster {
 	return canvas.NewRasterWithPixels(func(x, y, w, h int) color.Color {
-		// Adjust coordinates for Zoom and Offset
-		// Screen(x) -> World(wx) = (x - Offset.X) / Zoom
+		wx := x - int(c.Offset.X)
+		wy := y - int(c.Offset.Y)
 
-		zoomedSize := float32(gridSize) * c.Zoom
-		if zoomedSize < 5 {
-			zoomedSize = 5
-		} // prevent div by zero or tiny grid
-
-		// Calculate relative position within a grid cell
-		// To make grid move with Offset:
-		// We use (x - Offset) modulo (GridSize * Zoom)
-
-		offX := float32(x) - c.Offset.X
-		offY := float32(y) - c.Offset.Y
-
-		// Standard modulo logic for float
-		iz := int(zoomedSize)
-		modX := int(offX) % iz
-		modY := int(offY) % iz
-
-		// Handle negative modulo correctly
-		if modX < 0 {
-			modX += iz
+		if wx%gridSize == 0 && (wy/4)%2 == 0 {
+			return lineColor
 		}
-		if modY < 0 {
-			modY += iz
+		if wy%gridSize == 0 && (wx/4)%2 == 0 {
+			return lineColor
 		}
 
-		if modX < 4 && modY < 4 { // Slightly larger dots for visibility
-			return dotColor
-		}
 		return bgColor
 	})
 }

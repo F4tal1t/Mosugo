@@ -12,10 +12,6 @@ const (
 
 func (t ToolType) String() string {
 	switch t {
-	case ToolPan:
-		return "Pan Mode"
-	case ToolSelect:
-		return "Select Mode"
 	case ToolCard:
 		return "Card Mode"
 	case ToolDraw:
