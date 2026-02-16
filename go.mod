@@ -2,7 +2,7 @@ module mosugo
 
 go 1.23.2
 
-require fyne.io/fyne/v2 v2.7.2
+require fyne.io/fyne/v2 v2.5.3
 
 require (
 	fyne.io/systray v1.12.0 // indirect
