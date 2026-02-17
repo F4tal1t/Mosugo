@@ -1,7 +1,6 @@
 package canvas
 
 import (
-	"fmt"
 	"image/color"
 	"math"
 	"time"
@@ -18,32 +17,76 @@ import (
 )
 
 const (
-	GridSize = 16
+	GridSize = 40
 )
 
 func snap(v float32) float32 {
-	return float32((int(v) / GridSize) * GridSize)
+	// Proper floor snapping for consistent grid alignment
+	return float32(math.Floor(float64(v)/GridSize) * GridSize)
 }
 
 func snapUp(v float32) float32 {
-	cells := int(v) / GridSize
-	if int(v)%GridSize != 0 {
-		cells++
-	}
-	return float32(cells * GridSize)
+	val := float64(v)
+	snapped := math.Ceil(val/GridSize) * GridSize
+	return float32(snapped)
 }
 
 func (c *MosugoCanvas) ScreenToWorld(pos fyne.Position) fyne.Position {
-	x := float32(pos.X - c.Offset.X)
-	y := float32(pos.Y - c.Offset.Y)
+	x := (pos.X - c.Offset.X) / c.Scale
+	y := (pos.Y - c.Offset.Y) / c.Scale
 	return fyne.NewPos(x, y)
 }
 
 func (c *MosugoCanvas) WorldToScreen(pos fyne.Position) fyne.Position {
-	x := float32(pos.X + c.Offset.X)
-	y := float32(pos.Y + c.Offset.Y)
+	x := (pos.X * c.Scale) + c.Offset.X
+	y := (pos.Y * c.Scale) + c.Offset.Y
 	return fyne.NewPos(x, y)
 }
+
+// --- tools.Canvas Implementation ---
+
+func (c *MosugoCanvas) GetOffset() fyne.Position         { return c.Offset }
+func (c *MosugoCanvas) SetOffset(pos fyne.Position)      { c.Offset = pos }
+func (c *MosugoCanvas) GetScale() float32                { return c.Scale }
+func (c *MosugoCanvas) AddObject(o fyne.CanvasObject)    { c.Content.Add(o) }
+func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) { c.Content.Remove(o) }
+func (c *MosugoCanvas) SetCursor(cur desktop.Cursor) {
+	// Fyne widgets don't have a specific "SetCursor" method in the API (cursor is queried)
+	// We rely on the c.Cursor() method being called by the driver
+	// Just requesting a refresh might be enough if the driver polls Cursor()
+	c.Refresh()
+}
+func (c *MosugoCanvas) ContentObject() fyne.CanvasObject { return c.Content }
+
+// Additional Canvas Interface Implementations
+
+func (c *MosugoCanvas) Snap(v float32) float32                 { return snap(v) }
+func (c *MosugoCanvas) SnapUp(v float32) float32               { return snapUp(v) }
+func (c *MosugoCanvas) ContentContainer() *fyne.Container      { return c.Content }
+func (c *MosugoCanvas) GhostRect() *canvas.Rectangle           { return c.ghostRect }
+func (c *MosugoCanvas) GetSelectedCard() *cards.MosuWidget     { return c.selectedCard }
+func (c *MosugoCanvas) SetSelectedCard(card *cards.MosuWidget) { c.selectedCard = card }
+
+// SetTool is a helper to switch tools by enum (compatibility wrapper)
+func (c *MosugoCanvas) SetTool(t tools.ToolType) {
+	c.CurrentTool = t
+	switch t {
+	case tools.ToolPan:
+		c.ActiveTool = &tools.PanTool{}
+	case tools.ToolCard:
+		c.ActiveTool = &tools.CardTool{}
+	case tools.ToolDraw:
+		c.ActiveTool = &tools.DrawTool{}
+	case tools.ToolErase:
+		c.ActiveTool = &tools.EraseTool{}
+	// Add other tools here as implemented
+	default:
+		c.ActiveTool = &tools.CardTool{}
+	}
+	c.Refresh()
+}
+
+// -----------------------------------
 
 type MosugoCanvas struct {
 	widget.BaseWidget
@@ -52,7 +95,11 @@ type MosugoCanvas struct {
 	Content *fyne.Container
 
 	Offset      fyne.Position
+	Scale       float32
+	DeviceScale float32
+	// CurrentTool is kept for main.go compatibility, but logic delegates to ActiveTool
 	CurrentTool tools.ToolType
+	ActiveTool  tools.Tool
 
 	dragStart    fyne.Position
 	ghostRect    *canvas.Rectangle
@@ -70,6 +117,9 @@ type MosugoCanvas struct {
 	currentStroke []*canvas.Line
 	strokes       [][]*canvas.Line
 
+	// Map to store World Coordinates of strokes for rendering
+	strokesMap map[*canvas.Line]StrokeCoords
+
 	// Drawing smoothing
 	lastDrawPos fyne.Position
 
@@ -80,9 +130,12 @@ type MosugoCanvas struct {
 func NewMosugoCanvas() *MosugoCanvas {
 	c := &MosugoCanvas{
 		Offset:      fyne.NewPos(0, 0),
+		Scale:       1.0,
 		CurrentTool: tools.ToolCard,
+		ActiveTool:  &tools.CardTool{}, // Default tool
 		StrokeWidth: 2,
 		StrokeColor: theme.InkGrey,
+		strokesMap:  make(map[*canvas.Line]StrokeCoords),
 	}
 	c.ExtendBaseWidget(c)
 
@@ -110,6 +163,19 @@ type mosugoRenderer struct {
 func (r *mosugoRenderer) Destroy() {}
 
 func (r *mosugoRenderer) Layout(size fyne.Size) {
+	// Update device scale cache
+	if drv := fyne.CurrentApp().Driver(); drv != nil {
+		if cv := drv.CanvasForObject(r.canvas); cv != nil {
+			r.canvas.DeviceScale = cv.Scale()
+		} else {
+			// If not attached yet, or no canvas, default or keep old.
+			// But careful with 0 on first run.
+			if r.canvas.DeviceScale == 0 {
+				r.canvas.DeviceScale = 1.0
+			}
+		}
+	}
+
 	if r.canvas.Grid != nil {
 		r.canvas.Grid.Resize(size)
 		r.canvas.Grid.Move(fyne.NewPos(0, 0))
@@ -121,19 +187,69 @@ func (r *mosugoRenderer) Layout(size fyne.Size) {
 
 		for _, obj := range r.canvas.Content.Objects {
 			if mosuW, ok := obj.(*cards.MosuWidget); ok {
-				worldPos := mosuW.WorldPos
-				worldSize := mosuW.WorldSize
+				// Use WorldToScreen for robust positioning (Float based)
+				screenPos := r.canvas.WorldToScreen(mosuW.WorldPos)
 
-				screenX := float32(int(worldPos.X) + int(r.canvas.Offset.X))
-				screenY := float32(int(worldPos.Y) + int(r.canvas.Offset.Y))
+				// Scale the size as well
+				msgScale := r.canvas.Scale
+				screenSize := fyne.NewSize(
+					mosuW.WorldSize.Width*msgScale,
+					mosuW.WorldSize.Height*msgScale,
+				)
 
-				mosuW.Move(fyne.NewPos(screenX, screenY))
-				mosuW.Resize(worldSize)
+				mosuW.Move(screenPos)
+				mosuW.Resize(screenSize)
 			} else if rect, ok := obj.(*canvas.Rectangle); ok && rect == r.canvas.ghostRect {
-				r.canvas.Content.Objects = append(removeObj(r.canvas.Content.Objects, rect), rect)
+				// Ghost rect logic handled by Tool
+			} else if line, ok := obj.(*canvas.Line); ok {
+				// Handle Lines (World -> Screen)
+				// We need a map to store world coordinates. See MosugoCanvas struct.
+				if coords, ok := r.canvas.GetStrokeCoords(line); ok {
+					p1 := r.canvas.WorldToScreen(coords.P1)
+					p2 := r.canvas.WorldToScreen(coords.P2)
+					line.Position1 = p1
+					line.Position2 = p2
+					line.StrokeWidth = r.canvas.StrokeWidth * r.canvas.Scale
+				}
 			}
 		}
 	}
+}
+
+// ------------------------------------------------------------------
+// Stroke Management Helpers
+// ------------------------------------------------------------------
+
+type StrokeCoords struct {
+	P1, P2 fyne.Position
+}
+
+func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position) {
+	line := canvas.NewLine(c.StrokeColor)
+	line.StrokeWidth = c.StrokeWidth
+
+	// Initial placement
+	line.Position1 = c.WorldToScreen(p1)
+	line.Position2 = c.WorldToScreen(p2)
+
+	c.Content.Add(line)
+	// Register logical coordinates
+	c.RegisterStroke(line, p1, p2)
+}
+
+func (c *MosugoCanvas) RegisterStroke(line *canvas.Line, p1, p2 fyne.Position) {
+	if c.strokesMap == nil {
+		c.strokesMap = make(map[*canvas.Line]StrokeCoords)
+	}
+	c.strokesMap[line] = StrokeCoords{P1: p1, P2: p2}
+}
+
+func (c *MosugoCanvas) GetStrokeCoords(line *canvas.Line) (StrokeCoords, bool) {
+	if c.strokesMap == nil {
+		return StrokeCoords{}, false
+	}
+	coords, ok := c.strokesMap[line]
+	return coords, ok
 }
 
 func removeObj(s []fyne.CanvasObject, r fyne.CanvasObject) []fyne.CanvasObject {
@@ -171,39 +287,27 @@ func (c *MosugoCanvas) Cursor() desktop.Cursor {
 }
 
 func (c *MosugoCanvas) Tapped(e *fyne.PointEvent) {
-	for _, obj := range c.Content.Objects {
-		if mosuW, ok := obj.(*cards.MosuWidget); ok {
-			screenPos := fyne.NewPos(
-				float32(int(mosuW.WorldPos.X)+int(c.Offset.X)),
-				float32(int(mosuW.WorldPos.Y)+int(c.Offset.Y)),
-			)
-			if e.Position.X >= screenPos.X && e.Position.X <= screenPos.X+mosuW.WorldSize.Width &&
-				e.Position.Y >= screenPos.Y && e.Position.Y <= screenPos.Y+mosuW.WorldSize.Height {
-				if c.selectedCard != nil {
-					c.selectedCard.SetSelected(false)
-				}
-				c.selectedCard = mosuW
-				mosuW.SetSelected(true)
-				c.isDraggingCard = true
-				c.cardDragStart = e.Position
-				c.Content.Refresh()
-				return
-			}
-		}
-	}
-	if c.selectedCard != nil {
-		c.selectedCard.SetSelected(false)
-		c.selectedCard = nil
-		c.Content.Refresh()
+	if c.ActiveTool != nil {
+		c.ActiveTool.OnTapped(c, e)
 	}
 }
 
 func (c *MosugoCanvas) TappedSecondary(e *fyne.PointEvent) {
-	c.isPanning = true
+	// Usually secondary tap (right click) might just be context menu
+	// But in some apps it pans.
+	// For now, let's allow PanTool activation or just ignore if tool doesn't handle it
+	// But our interface doesn't have OnTappedSecondary.
+	// We can implement Pan interrupt here?
+	c.isPanning = true // Keep old behavior or delegate?
 	c.panStart = e.Position
+	// Actually, let's invoke dragging logic if it moves?
+	// But TappedSecondary is a click, not drag.
 }
 
 func (c *MosugoCanvas) Dragged(e *fyne.DragEvent) {
+	// If right-mouse drag (often handled as Panning globally regardless of tool)
+	// Fyne doesn't distinguish button in Dragged event easily unless we track MouseDown.
+	// But c.isPanning is set by TappedSecondary?
 	if c.isPanning {
 		delta := e.Position.Subtract(c.panStart)
 		c.Offset.X += delta.X
@@ -213,131 +317,8 @@ func (c *MosugoCanvas) Dragged(e *fyne.DragEvent) {
 		return
 	}
 
-	if c.isDraggingCard && c.selectedCard != nil {
-		delta := e.Position.Subtract(c.cardDragStart)
-		c.selectedCard.WorldPos.X += delta.X
-		c.selectedCard.WorldPos.Y += delta.Y
-		c.cardDragStart = e.Position
-		c.Refresh()
-		return
-	}
-
-	switch c.CurrentTool {
-	case tools.ToolDraw:
-		if !c.isDrawing {
-			c.isDrawing = true
-			c.currentStroke = []*canvas.Line{}
-			c.dragStart = e.Position
-			c.lastDrawPos = e.Position
-		}
-
-		// Simple smoothing: Avoid drawing if movement is too small
-		if math.Abs(float64(e.Position.X-c.lastDrawPos.X)) < 2 && math.Abs(float64(e.Position.Y-c.lastDrawPos.Y)) < 2 {
-			return
-		}
-
-		prevPos := c.lastDrawPos
-		c.lastDrawPos = e.Position
-
-		// Linear Interpolation for smoothness
-		dx := e.Position.X - prevPos.X
-		dy := e.Position.Y - prevPos.Y
-		dist := float32(math.Sqrt(float64(dx*dx + dy*dy)))
-
-		// If moving fast, interpolate with fewer segments but enough to cover gaps
-		// Using a dynamic step size based on speed might be better, but fixed step is fine for now
-		if dist > 2 {
-			line := canvas.NewLine(c.StrokeColor)
-			line.StrokeWidth = c.StrokeWidth
-			line.Position1 = prevPos
-			line.Position2 = e.Position
-			c.currentStroke = append(c.currentStroke, line)
-			c.Content.Add(line)
-		}
-
-		c.Content.Refresh()
-		return
-
-	case tools.ToolErase:
-		for _, obj := range c.Content.Objects {
-			if mosuW, ok := obj.(*cards.MosuWidget); ok {
-				screenPos := fyne.NewPos(
-					float32(int(mosuW.WorldPos.X)+int(c.Offset.X)),
-					float32(int(mosuW.WorldPos.Y)+int(c.Offset.Y)),
-				)
-				if e.Position.X >= screenPos.X && e.Position.X <= screenPos.X+mosuW.WorldSize.Width &&
-					e.Position.Y >= screenPos.Y && e.Position.Y <= screenPos.Y+mosuW.WorldSize.Height {
-					c.Content.Remove(mosuW)
-					if c.selectedCard == mosuW {
-						c.selectedCard = nil
-					}
-					c.Content.Refresh()
-					return
-				}
-			} else if line, ok := obj.(*canvas.Line); ok {
-				if c.pointNearLine(e.Position, line, 10) {
-					c.Content.Remove(line)
-					for i, stroke := range c.strokes {
-						for j, l := range stroke {
-							if l == line {
-								c.strokes[i] = append(stroke[:j], stroke[j+1:]...)
-								break
-							}
-						}
-					}
-					c.Content.Refresh()
-					return
-				}
-			}
-		}
-		return
-
-	case tools.ToolCard:
-		if !c.isDragging {
-			c.isDragging = true
-			c.dragStart = e.Position.Subtract(e.Dragged)
-			c.ghostRect.Show()
-		}
-
-		currPos := e.Position
-
-		x1 := math.Min(float64(c.dragStart.X), float64(currPos.X))
-		y1 := math.Min(float64(c.dragStart.Y), float64(currPos.Y))
-		x2 := math.Max(float64(c.dragStart.X), float64(currPos.X))
-		y2 := math.Max(float64(c.dragStart.Y), float64(currPos.Y))
-
-		rawWorldX1 := float32(x1) - c.Offset.X
-		rawWorldY1 := float32(y1) - c.Offset.Y
-		rawWorldX2 := float32(x2) - c.Offset.X
-		rawWorldY2 := float32(y2) - c.Offset.Y
-
-		worldX1 := int(rawWorldX1)
-		worldY1 := int(rawWorldY1)
-		worldX2 := int(rawWorldX2)
-		worldY2 := int(rawWorldY2)
-
-		snapX1 := (worldX1 / GridSize) * GridSize
-		snapY1 := (worldY1 / GridSize) * GridSize
-
-		snapX2 := ((worldX2 / GridSize) + 1) * GridSize
-		snapY2 := ((worldY2 / GridSize) + 1) * GridSize
-
-		if snapX2 <= snapX1 {
-			snapX2 = snapX1 + GridSize
-		}
-		if snapY2 <= snapY1 {
-			snapY2 = snapY1 + GridSize
-		}
-
-		snapW := float32(snapX2 - snapX1)
-		snapH := float32(snapY2 - snapY1)
-
-		screenX := float32(snapX1 + int(c.Offset.X))
-		screenY := float32(snapY1 + int(c.Offset.Y))
-
-		c.ghostRect.Move(fyne.NewPos(screenX, screenY))
-		c.ghostRect.Resize(fyne.NewSize(snapW, snapH))
-		c.Content.Refresh()
+	if c.ActiveTool != nil {
+		c.ActiveTool.OnDragged(c, e)
 	}
 }
 
@@ -347,55 +328,8 @@ func (c *MosugoCanvas) DragEnd() {
 		return
 	}
 
-	if c.isDraggingCard {
-		c.isDraggingCard = false
-		return
-	}
-
-	if c.isDrawing {
-		c.isDrawing = false
-		if len(c.currentStroke) > 0 {
-			c.strokes = append(c.strokes, c.currentStroke)
-			// Don't clear currentStroke here if it's reused, but we re-init it in Dragged start
-			// Just nil it to be safe
-			c.currentStroke = nil
-		}
-		return
-	}
-
-	if c.CurrentTool == tools.ToolCard && c.isDragging {
-		rectSize := c.ghostRect.Size()
-		rectPos := c.ghostRect.Position()
-
-		c.ghostRect.Hide()
-		c.isDragging = false
-
-		worldW := int(rectSize.Width)
-		worldH := int(rectSize.Height)
-		worldX := int(rectPos.X - c.Offset.X)
-		worldY := int(rectPos.Y - c.Offset.Y)
-
-		if worldW < GridSize || worldH < GridSize {
-			c.Content.Refresh()
-			return
-		}
-
-		cardID := fmt.Sprintf("card_%d", len(c.Content.Objects))
-		newCard := cards.NewMosuWidget(cardID, theme.CardWhite)
-
-		newCard.WorldPos = fyne.NewPos(float32(worldX), float32(worldY))
-		newCard.WorldSize = fyne.NewSize(float32(worldW), float32(worldH))
-
-		screenX := float32(worldX + int(c.Offset.X))
-		screenY := float32(worldY + int(c.Offset.Y))
-
-		newCard.Move(fyne.NewPos(screenX, screenY))
-		newCard.Resize(fyne.NewSize(float32(worldW), float32(worldH)))
-
-		go c.animateCardFadeIn(newCard)
-
-		c.Content.Add(newCard)
-		c.Content.Refresh()
+	if c.ActiveTool != nil {
+		c.ActiveTool.OnDragEnd(c)
 	}
 }
 

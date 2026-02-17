@@ -12,8 +12,8 @@ type MosugoTheme struct {
 }
 
 var (
-	InkGrey       = color.RGBA{80, 80, 90, 255}
-	InkLightGrey  = color.RGBA{120, 120, 130, 255}
+	InkGrey       = color.RGBA{130, 130, 140, 255}
+	InkLightGrey  = color.RGBA{160, 160, 170, 255}
 	CardWhite     = color.RGBA{255, 255, 255, 255}
 	CardYellow    = color.RGBA{255, 247, 64, 255}
 	CardTurquoise = color.RGBA{64, 224, 208, 255}

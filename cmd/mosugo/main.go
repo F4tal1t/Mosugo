@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	BorderColor = color.RGBA{240, 240, 245, 255}
+	BorderColor = color.RGBA{175, 175, 175, 255}
 )
 
 func createToolButton(iconPath string, tool tools.ToolType, mosugoCanvas *mosuCanvas.MosugoCanvas) *widget.Button {
@@ -32,8 +32,7 @@ func createToolButton(iconPath string, tool tools.ToolType, mosugoCanvas *mosuCa
 	}
 
 	btn := widget.NewButtonWithIcon("", icon, func() {
-		mosugoCanvas.CurrentTool = tool
-		mosugoCanvas.Refresh()
+		mosugoCanvas.SetTool(tool)
 		fmt.Println("Selected Tool:", tool)
 	})
 	btn.Importance = widget.LowImportance
@@ -98,21 +97,17 @@ func main() {
 		deskCanvas.SetOnKeyDown(func(key *fyne.KeyEvent) {
 			switch key.Name {
 			case fyne.Key1, "KP1":
-				mosugoCanvas.CurrentTool = tools.ToolCard
+				mosugoCanvas.SetTool(tools.ToolCard)
 				fmt.Println("Tool: Card Mode")
-				mosugoCanvas.Refresh()
 			case fyne.Key2, "KP2":
-				mosugoCanvas.CurrentTool = tools.ToolDraw
+				mosugoCanvas.SetTool(tools.ToolDraw)
 				fmt.Println("Tool: Draw Mode")
-				mosugoCanvas.Refresh()
 			case fyne.Key3, "KP3":
-				mosugoCanvas.CurrentTool = tools.ToolErase
+				mosugoCanvas.SetTool(tools.ToolErase)
 				fmt.Println("Tool: Erase Mode")
-				mosugoCanvas.Refresh()
 
 			case fyne.KeyEscape:
-				mosugoCanvas.CurrentTool = tools.ToolCard
-				mosugoCanvas.Refresh()
+				mosugoCanvas.SetTool(tools.ToolCard)
 			}
 		})
 	}

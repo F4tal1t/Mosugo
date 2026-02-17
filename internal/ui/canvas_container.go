@@ -87,7 +87,7 @@ func (r *metaballRenderer) generator(w, h int) image.Image {
 	}
 
 	thick := r.m.Thickness * scale
-	tY := r.m.TabY * scale
+	// tY := r.m.TabY * scale
 	tW := r.m.TabWidth * scale
 	tH := r.m.TabHeight * scale
 	fW, fH := float32(w), float32(h)
@@ -111,7 +111,7 @@ func (r *metaballRenderer) generator(w, h int) image.Image {
 	// Tab Position
 	// Centered on the left inner border edge
 	tabCX := -holeHalfW
-	tabCY := (tY - centerY) + tH/2
+	tabCY := float32(0)
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -128,7 +128,7 @@ func (r *metaballRenderer) generator(w, h int) image.Image {
 
 			// 2. SDF for Tab
 			tabRad := 15 * scale
-			sdTab := sdBox(relX-tabCX, relY-tabCY, tW/2-tabRad, tH/2-tabRad) - tabRad
+			sdTab := sdBox(relX-tabCX, relY-tabCY, tW/2-tabRad, tH/3-tabRad) - tabRad
 
 			// 3. Union (Merge Border and Tab)
 			dFinal := opSmoothUnion(sdFrame, sdTab, k)
