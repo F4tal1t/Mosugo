@@ -8,7 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/widget"
-	
+
 	"mosugo/internal/theme"
 )
 
@@ -64,6 +64,12 @@ func NewMosuWidget(id string, c color.Color) *MosuWidget {
 	m.content.Resize(fyne.NewSize(100, 100))
 
 	return m
+}
+
+func (m *MosuWidget) FocusEntry() {
+	if m.content != nil {
+		m.content.FocusGained()
+	}
 }
 
 func (m *MosuWidget) SetSelected(selected bool) {

@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
 	"mosugo/internal/cards"
@@ -53,24 +54,27 @@ type MosugoCanvas struct {
 	Offset      fyne.Position
 	CurrentTool tools.ToolType
 
-	dragStart      fyne.Position
-	ghostRect      *canvas.Rectangle
-	isDragging     bool
-	selectedCard   *cards.MosuWidget
-	dragOffset     fyne.Position
-	
-	isPanning      bool
-	panStart       fyne.Position
-	
+	dragStart    fyne.Position
+	ghostRect    *canvas.Rectangle
+	isDragging   bool
+	selectedCard *cards.MosuWidget
+	dragOffset   fyne.Position
+
+	isPanning bool
+	panStart  fyne.Position
+
 	isDraggingCard bool
 	cardDragStart  fyne.Position
-	
-	isDrawing      bool
-	currentStroke  []*canvas.Line
-	strokes        [][]*canvas.Line
-	
-	StrokeWidth    float32
-	StrokeColor    color.Color
+
+	isDrawing     bool
+	currentStroke []*canvas.Line
+	strokes       [][]*canvas.Line
+
+	// Drawing smoothing
+	lastDrawPos fyne.Position
+
+	StrokeWidth float32
+	StrokeColor color.Color
 }
 
 func NewMosugoCanvas() *MosugoCanvas {
@@ -154,6 +158,18 @@ func (r *mosugoRenderer) Refresh() {
 	canvas.Refresh(r.canvas.Content)
 }
 
+func (c *MosugoCanvas) Cursor() desktop.Cursor {
+	switch c.CurrentTool {
+	case tools.ToolCard:
+		return desktop.CrosshairCursor
+	case tools.ToolDraw:
+		return desktop.TextCursor // Closest to a 'pencil' or precision cursor in standard set
+	case tools.ToolErase:
+		return desktop.HResizeCursor // Placeholder, or use Default if no better option
+	}
+	return desktop.DefaultCursor
+}
+
 func (c *MosugoCanvas) Tapped(e *fyne.PointEvent) {
 	for _, obj := range c.Content.Objects {
 		if mosuW, ok := obj.(*cards.MosuWidget); ok {
@@ -212,36 +228,33 @@ func (c *MosugoCanvas) Dragged(e *fyne.DragEvent) {
 			c.isDrawing = true
 			c.currentStroke = []*canvas.Line{}
 			c.dragStart = e.Position
+			c.lastDrawPos = e.Position
 		}
 
-		prevPos := c.dragStart
-		if len(c.currentStroke) > 0 {
-			prevLine := c.currentStroke[len(c.currentStroke)-1]
-			prevPos = prevLine.Position2
+		// Simple smoothing: Avoid drawing if movement is too small
+		if math.Abs(float64(e.Position.X-c.lastDrawPos.X)) < 2 && math.Abs(float64(e.Position.Y-c.lastDrawPos.Y)) < 2 {
+			return
 		}
-		
+
+		prevPos := c.lastDrawPos
+		c.lastDrawPos = e.Position
+
+		// Linear Interpolation for smoothness
 		dx := e.Position.X - prevPos.X
 		dy := e.Position.Y - prevPos.Y
 		dist := float32(math.Sqrt(float64(dx*dx + dy*dy)))
-		
-		if dist > 3 {
-			steps := int(dist / 3)
-			for i := 1; i <= steps; i++ {
-				t := float32(i) / float32(steps)
-				interpX := prevPos.X + dx*t
-				interpY := prevPos.Y + dy*t
-				
-				line := canvas.NewLine(c.StrokeColor)
-				line.StrokeWidth = c.StrokeWidth
-				line.Position1 = prevPos
-				line.Position2 = fyne.NewPos(interpX, interpY)
-				c.currentStroke = append(c.currentStroke, line)
-				c.Content.Add(line)
-				prevPos = line.Position2
-			}
+
+		// If moving fast, interpolate with fewer segments but enough to cover gaps
+		// Using a dynamic step size based on speed might be better, but fixed step is fine for now
+		if dist > 2 {
+			line := canvas.NewLine(c.StrokeColor)
+			line.StrokeWidth = c.StrokeWidth
+			line.Position1 = prevPos
+			line.Position2 = e.Position
+			c.currentStroke = append(c.currentStroke, line)
+			c.Content.Add(line)
 		}
-		
-		c.dragStart = e.Position
+
 		c.Content.Refresh()
 		return
 
@@ -343,6 +356,8 @@ func (c *MosugoCanvas) DragEnd() {
 		c.isDrawing = false
 		if len(c.currentStroke) > 0 {
 			c.strokes = append(c.strokes, c.currentStroke)
+			// Don't clear currentStroke here if it's reused, but we re-init it in Dragged start
+			// Just nil it to be safe
 			c.currentStroke = nil
 		}
 		return
@@ -376,9 +391,9 @@ func (c *MosugoCanvas) DragEnd() {
 
 		newCard.Move(fyne.NewPos(screenX, screenY))
 		newCard.Resize(fyne.NewSize(float32(worldW), float32(worldH)))
-		
+
 		go c.animateCardFadeIn(newCard)
-		
+
 		c.Content.Add(newCard)
 		c.Content.Refresh()
 	}
@@ -421,23 +436,23 @@ func (c *MosugoCanvas) animateCardFadeIn(card *cards.MosuWidget) {
 	for i := 0; i <= steps; i++ {
 		progress := float32(i) / float32(steps)
 		scale := 0.8 + 0.2*progress
-		
+
 		scaledW := originalSize.Width * scale
 		scaledH := originalSize.Height * scale
-		
+
 		offsetX := (originalSize.Width - scaledW) / 2
 		offsetY := (originalSize.Height - scaledH) / 2
-		
+
 		screenX := float32(int(card.WorldPos.X)+int(c.Offset.X)) + offsetX
 		screenY := float32(int(card.WorldPos.Y)+int(c.Offset.Y)) + offsetY
-		
+
 		card.Move(fyne.NewPos(screenX, screenY))
 		card.Resize(fyne.NewSize(scaledW, scaledH))
 		card.Refresh()
-		
+
 		time.Sleep(stepDuration)
 	}
-	
+
 	card.Resize(originalSize)
 	screenX := float32(int(card.WorldPos.X) + int(c.Offset.X))
 	screenY := float32(int(card.WorldPos.Y) + int(c.Offset.Y))
