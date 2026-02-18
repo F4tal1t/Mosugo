@@ -20,7 +20,8 @@ import (
 )
 
 var (
-	BorderColor = color.RGBA{175, 175, 175, 255}
+	BorderColor = color.RGBA{0, 31, 45, 255}
+	toolButtons []*widget.Button
 )
 
 func createToolButton(iconPath string, tool tools.ToolType, mosugoCanvas *mosuCanvas.MosugoCanvas) *widget.Button {
@@ -30,12 +31,19 @@ func createToolButton(iconPath string, tool tools.ToolType, mosugoCanvas *mosuCa
 	} else {
 		log.Println("Could not load icon:", iconPath, err)
 	}
-
-	btn := widget.NewButtonWithIcon("", icon, func() {
+	var btn *widget.Button
+	btn = widget.NewButtonWithIcon("", icon, func() {
 		mosugoCanvas.SetTool(tool)
+		for _, b := range toolButtons {
+			b.Importance = widget.LowImportance
+			b.Refresh()
+		}
+		btn.Importance = widget.HighImportance
+		btn.Refresh()
 		fmt.Println("Selected Tool:", tool)
 	})
 	btn.Importance = widget.LowImportance
+	toolButtons = append(toolButtons, btn)
 	return btn
 }
 
@@ -44,7 +52,7 @@ func main() {
 	a.Settings().SetTheme(theme.NewMosugoTheme())
 
 	w := a.NewWindow("Mosugo")
-	w.Resize(fyne.NewSize(1200, 800))
+	w.Resize(fyne.NewSize(600, 400))
 	w.SetPadded(false)
 
 	mosugoCanvas := mosuCanvas.NewMosugoCanvas()
@@ -53,27 +61,23 @@ func main() {
 	drawBtn := createToolButton("assets/draw.svg", tools.ToolDraw, mosugoCanvas)
 	eraseBtn := createToolButton("assets/eraser.svg", tools.ToolErase, mosugoCanvas)
 
-	// Toolbar Buttons
-	toolbarButtons := container.NewVBox(
+	toolbarButtons := container.NewGridWrap(fyne.NewSize(35, 35),
 		cardBtn,
 		drawBtn,
 		eraseBtn,
 	)
 
-	// Create the Metaball Border Overlay
+	// creating Metaball Border Overlay
 	metaBorder := ui.NewMetaballBorder(BorderColor)
 
-	// 1. Canvas layer
+	// canvas layer
 	canvasLayer := mosugoCanvas
 
-	// 2. Border Overlay (Frame + Tab Background)
+	// border Overlay (Frame + Tab Background)
 	borderLayer := metaBorder
 
-	// 3. Toolbar Buttons (Left Aligned)
-	// We use padding to push it into the tab area properly
-
 	leftPadding := canvas.NewRectangle(color.Transparent)
-	leftPadding.SetMinSize(fyne.NewSize(12, 0))
+	leftPadding.SetMinSize(fyne.NewSize(5, 0))
 
 	toolbarAligned := container.NewHBox(
 		leftPadding,
@@ -95,6 +99,9 @@ func main() {
 
 	if deskCanvas, ok := w.Canvas().(desktop.Canvas); ok {
 		deskCanvas.SetOnKeyDown(func(key *fyne.KeyEvent) {
+			var targetBtn *widget.Button
+			var targetTool tools.ToolType
+
 			switch key.Name {
 			case fyne.Key1, "KP1":
 				mosugoCanvas.SetTool(tools.ToolCard)
@@ -108,6 +115,15 @@ func main() {
 
 			case fyne.KeyEscape:
 				mosugoCanvas.SetTool(tools.ToolCard)
+			}
+			if targetBtn != nil {
+				mosugoCanvas.SetTool(targetTool)
+				for _, b := range toolButtons {
+					b.Importance = widget.LowImportance
+					b.Refresh()
+				}
+				targetBtn.Importance = widget.HighImportance
+				targetBtn.Refresh()
 			}
 		})
 	}

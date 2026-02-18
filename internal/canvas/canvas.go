@@ -51,14 +51,10 @@ func (c *MosugoCanvas) GetScale() float32                { return c.Scale }
 func (c *MosugoCanvas) AddObject(o fyne.CanvasObject)    { c.Content.Add(o) }
 func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) { c.Content.Remove(o) }
 func (c *MosugoCanvas) SetCursor(cur desktop.Cursor) {
-	// Fyne widgets don't have a specific "SetCursor" method in the API (cursor is queried)
-	// We rely on the c.Cursor() method being called by the driver
-	// Just requesting a refresh might be enough if the driver polls Cursor()
+
 	c.Refresh()
 }
 func (c *MosugoCanvas) ContentObject() fyne.CanvasObject { return c.Content }
-
-// Additional Canvas Interface Implementations
 
 func (c *MosugoCanvas) Snap(v float32) float32                 { return snap(v) }
 func (c *MosugoCanvas) SnapUp(v float32) float32               { return snapUp(v) }
@@ -67,7 +63,6 @@ func (c *MosugoCanvas) GhostRect() *canvas.Rectangle           { return c.ghostR
 func (c *MosugoCanvas) GetSelectedCard() *cards.MosuWidget     { return c.selectedCard }
 func (c *MosugoCanvas) SetSelectedCard(card *cards.MosuWidget) { c.selectedCard = card }
 
-// SetTool is a helper to switch tools by enum (compatibility wrapper)
 func (c *MosugoCanvas) SetTool(t tools.ToolType) {
 	c.CurrentTool = t
 	switch t {
@@ -79,7 +74,6 @@ func (c *MosugoCanvas) SetTool(t tools.ToolType) {
 		c.ActiveTool = &tools.DrawTool{}
 	case tools.ToolErase:
 		c.ActiveTool = &tools.EraseTool{}
-	// Add other tools here as implemented
 	default:
 		c.ActiveTool = &tools.CardTool{}
 	}

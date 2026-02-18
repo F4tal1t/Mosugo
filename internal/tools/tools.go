@@ -247,36 +247,10 @@ func (t *DrawTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 		t.lastDrawPos = e.Position // Start in screen space
 	}
 
-	// Add line segment
-	// Currently drawing is Screen Space -> we need World Space persistence?
-	// The current codebase stores canvas.Line objects which are screen objects physically added to container
-	// But in 'Layout' they are not repositioned? canvas.go didn't have logic to move lines in Layout!
-	// This means lines would "float" above the panning canvas in the original code?
-	// *Analysis*: In original code, `Layout` loop only handled `*cards.MosuWidget`.
-	// Strokes were added to `c.Content`.
-	// If `c.Content` moves `fyne.NewPos(0,0)`, lines stay at their creation coordinate.
-	// But `Offset` was used only for Cards.
-	// **Major Bug in V1**: Strokes didn't pan!
-	// *Fix*: We should store lines in World Space.
-	// For now, simpler: Create lines at WorldPos, and Renderer will handle them if we upgrade Renderer.
-	// Or: Create lines at ScreenPos, but moving canvas requires moving lines.
-	// *Correct approach*: Add lines to Content. Content is what we plan to persist.
-	// Renderer needs to be updated to handle Line objects too.
-
-	// Let's implement drawing in World Space coordinates
-
-	// Threshold check
 	if math.Abs(float64(e.Position.X-t.lastDrawPos.X)) < 2 && math.Abs(float64(e.Position.Y-t.lastDrawPos.Y)) < 2 {
 		return
 	}
 
-	// Use custom StrokeLine to preserve World Coordinates
-	// Note: We need to define StrokeLine or share it.
-	// Since StrokeLine is defined in canvas package (circular dependency risk if we use it here),
-	// we should probably just use canvas.Line and accept the destructiveness simpler for now,
-	// OR better: Ask Canvas to "AddLine(p1, p2)" and let Canvas wrap it.
-
-	// Let's use AddLine method on Canvas interface to abstract this.
 	startWorld := c.ScreenToWorld(t.lastDrawPos)
 	endWorld := c.ScreenToWorld(e.Position)
 
@@ -305,8 +279,6 @@ func (t *EraseTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 func (t *EraseTool) OnDragEnd(c Canvas) {}
 
 func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
-	// Check collisions with Objects
-	// Need to check in Screen Space
 
 	objects := c.ContentContainer().Objects
 	for i := len(objects) - 1; i >= 0; i-- {
@@ -315,7 +287,7 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 		// Handle Cards
 		if mosuW, ok := obj.(*cards.MosuWidget); ok {
 			sPos := c.WorldToScreen(mosuW.WorldPos)
-			sPos = mosuW.Position() // Should be synced by Layout already? Yes.
+			sPos = mosuW.Position()
 			sSize := mosuW.Size()
 
 			if screenPos.X >= sPos.X && screenPos.X <= sPos.X+sSize.Width &&
@@ -325,6 +297,7 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 				return
 			}
 		}
+
 		// Stroke lines handling would need access to the wrapper type or helper
 		// Since we handle collision in Canvas usually, maybe delegate "RemoveAt(pos)"?
 		// For now, let's skip line erasure in this refactor step until we finalize data model.

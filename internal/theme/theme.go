@@ -15,11 +15,11 @@ var (
 	InkGrey       = color.RGBA{130, 130, 140, 255}
 	InkLightGrey  = color.RGBA{160, 160, 170, 255}
 	CardWhite     = color.RGBA{255, 255, 255, 255}
-	CardYellow    = color.RGBA{255, 247, 64, 255}
-	CardTurquoise = color.RGBA{64, 224, 208, 255}
-	CardPink      = color.RGBA{255, 105, 180, 255}
-	GridLine      = color.RGBA{200, 200, 220, 255}
-	GridBg        = color.RGBA{250, 250, 250, 255}
+	CardYellow    = color.RGBA{255, 247, 164, 255}
+	CardTurquoise = color.RGBA{160, 194, 255, 255}
+	CardPink      = color.RGBA{255, 208, 196, 255}
+	GridLine      = color.RGBA{190, 190, 190, 255}
+	GridBg        = color.RGBA{220, 220, 220, 255}
 	SelectionBlue = color.RGBA{100, 150, 255, 255}
 )
 
@@ -40,9 +40,9 @@ func (t *MosugoTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Co
 	case theme.ColorNameButton:
 		return color.RGBA{245, 245, 248, 255}
 	case theme.ColorNameHover:
-		return color.RGBA{230, 230, 235, 255}
+		return color.RGBA{0, 64, 92, 255}
 	case theme.ColorNamePrimary:
-		return SelectionBlue
+		return color.RGBA{0, 113, 162, 255}
 	}
 	return t.Theme.Color(n, v)
 }
