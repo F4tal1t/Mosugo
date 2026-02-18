@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// MetaballBorder is a custom widget wrapper that draws a metaball-like border
 type MetaballBorder struct {
 	widget.BaseWidget
 	BorderColor color.Color

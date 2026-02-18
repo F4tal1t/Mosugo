@@ -57,11 +57,13 @@ func main() {
 
 	mosugoCanvas := mosuCanvas.NewMosugoCanvas()
 
+	selectBtn := createToolButton("assets/select.svg", tools.ToolSelect, mosugoCanvas)
 	cardBtn := createToolButton("assets/card.svg", tools.ToolCard, mosugoCanvas)
 	drawBtn := createToolButton("assets/draw.svg", tools.ToolDraw, mosugoCanvas)
 	eraseBtn := createToolButton("assets/eraser.svg", tools.ToolErase, mosugoCanvas)
 
 	toolbarButtons := container.NewGridWrap(fyne.NewSize(35, 35),
+		selectBtn,
 		cardBtn,
 		drawBtn,
 		eraseBtn,

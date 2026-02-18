@@ -3,8 +3,8 @@ package tools
 type ToolType int
 
 const (
-	ToolPan ToolType = iota
-	ToolSelect
+	ToolSelect ToolType = iota // Default tool
+	ToolPan                    // Kept for backward compat if needed, but Select is primary
 	ToolCard
 	ToolDraw
 	ToolErase
@@ -12,6 +12,8 @@ const (
 
 func (t ToolType) String() string {
 	switch t {
+	case ToolSelect:
+		return "Select Mode"
 	case ToolCard:
 		return "Card Mode"
 	case ToolDraw:

@@ -52,39 +52,15 @@ type Tool interface {
 
 // --- Concrete Tool Implementations ---
 
-// PanTool handles canvas movement
-type PanTool struct{}
-
-func (t *PanTool) Name() string           { return "Pan Tool" }
-func (t *PanTool) Cursor() desktop.Cursor { return desktop.DefaultCursor } // Or specific grab cursor
-
-func (t *PanTool) OnTapped(c Canvas, e *fyne.PointEvent) {}
-
-func (t *PanTool) OnDragged(c Canvas, e *fyne.DragEvent) {
-	// Standard Panning: Drag moves the view
-	// NewOffset = OldOffset + Delta
-	current := c.GetOffset()
-	c.SetOffset(fyne.NewPos(
-		current.X+e.Dragged.DX,
-		current.Y+e.Dragged.DY,
-	))
-	c.Refresh()
+// SelectTool handles selection and movement of cards
+type SelectTool struct {
+	isMovingCard bool
 }
 
-func (t *PanTool) OnDragEnd(c Canvas) {}
+func (t *SelectTool) Name() string           { return "Select Tool" }
+func (t *SelectTool) Cursor() desktop.Cursor { return desktop.DefaultCursor }
 
-// CardTool handles creation of Mosu cards and Moving existing cards
-type CardTool struct {
-	startPos        fyne.Position // World Coordinates
-	isDragging      bool
-	isMovingCard    bool
-	dragStartScreen fyne.Position // Screen Coordinates for calculating deltas without accumulation error
-}
-
-func (t *CardTool) Name() string           { return "Card Tool" }
-func (t *CardTool) Cursor() desktop.Cursor { return desktop.CrosshairCursor }
-
-func (t *CardTool) OnTapped(c Canvas, e *fyne.PointEvent) {
+func (t *SelectTool) OnTapped(c Canvas, e *fyne.PointEvent) {
 	// Check if we tapped on a card to select it
 	objects := c.ContentContainer().Objects
 	// Iterate backwards to hit top-most first
@@ -92,20 +68,16 @@ func (t *CardTool) OnTapped(c Canvas, e *fyne.PointEvent) {
 		obj := objects[i]
 		if mosuW, ok := obj.(*cards.MosuWidget); ok {
 			screenPos := c.WorldToScreen(mosuW.WorldPos)
-			size := mosuW.Size() // This should be screen size already if layout ran
+			size := mosuW.Size() // Screen size
 
 			if e.Position.X >= screenPos.X && e.Position.X <= screenPos.X+size.Width &&
 				e.Position.Y >= screenPos.Y && e.Position.Y <= screenPos.Y+size.Height {
 
-				if c.GetSelectedCard() != nil {
+				if c.GetSelectedCard() != nil && c.GetSelectedCard() != mosuW {
 					c.GetSelectedCard().SetSelected(false)
 				}
 				c.SetSelectedCard(mosuW)
 				mosuW.SetSelected(true)
-
-				// Prepare for potential drag
-				t.isMovingCard = true
-				// We don't set isDragging for creation here
 				c.Refresh()
 				return
 			}
@@ -120,27 +92,104 @@ func (t *CardTool) OnTapped(c Canvas, e *fyne.PointEvent) {
 	}
 }
 
-func (t *CardTool) OnDragged(c Canvas, e *fyne.DragEvent) {
-	// 1. Move Existing Card
-	if t.isMovingCard && c.GetSelectedCard() != nil {
-		card := c.GetSelectedCard()
-		// Move in World Space
-		// Delta in Screen Space needs to be scaled to World Space
+func (t *SelectTool) OnDragged(c Canvas, e *fyne.DragEvent) {
+	// 1. Identify where the drag started
+	dragStartScreen := e.Position.Subtract(e.Dragged)
+
+	// 2. If we aren't already moving a card, check if we clicked on one
+	if !t.isMovingCard {
 		scale := c.GetScale()
-		if scale == 0 {
+		if scale <= 0 {
 			scale = 1.0
 		}
 
+		objects := c.ContentContainer().Objects
+		// Iterate backwards (top-most first)
+		for i := len(objects) - 1; i >= 0; i-- {
+			obj := objects[i]
+			if mosuW, ok := obj.(*cards.MosuWidget); ok {
+				sPos := c.WorldToScreen(mosuW.WorldPos)
+				sSize := mosuW.Size()
+
+				// Hit Test on Drag Start Position
+				if dragStartScreen.X >= sPos.X && dragStartScreen.X <= sPos.X+sSize.Width &&
+					dragStartScreen.Y >= sPos.Y && dragStartScreen.Y <= sPos.Y+sSize.Height {
+
+					// Select this card immediately
+					if c.GetSelectedCard() != nil && c.GetSelectedCard() != mosuW {
+						c.GetSelectedCard().SetSelected(false)
+					}
+					c.SetSelectedCard(mosuW)
+					mosuW.SetSelected(true)
+					t.isMovingCard = true // Start moving mode
+					break                 // Found the target
+				}
+			}
+		}
+	}
+
+	// 3. Move Logic
+	if t.isMovingCard && c.GetSelectedCard() != nil {
+		card := c.GetSelectedCard()
+
+		scale := c.GetScale()
+		if scale <= 0 {
+			scale = 1.0
+		}
+
+		// Convert screen delta to world delta
 		dx := e.Dragged.DX / scale
 		dy := e.Dragged.DY / scale
 
 		card.WorldPos.X += dx
 		card.WorldPos.Y += dy
+
+		// Do not SNAP during drag to allow smooth movement
+		// Only snap on drag end if desired, or implementation of a better "snap-to-grid"
+		// If we snap every frame with small deltas, we lose the float precision necessary for smooth dragging
+		// card.WorldPos.X = c.Snap(card.WorldPos.X)
+		// card.WorldPos.Y = c.Snap(card.WorldPos.Y)
+
 		c.Refresh()
 		return
 	}
 
-	// 2. Create New Card (Ghost Rect)
+	// 4. Pan Logic (Fallback if no card hit)
+	current := c.GetOffset()
+	c.SetOffset(fyne.NewPos(
+		current.X+e.Dragged.DX,
+		current.Y+e.Dragged.DY,
+	))
+	c.Refresh()
+}
+
+func (t *SelectTool) OnDragEnd(c Canvas) {
+	if t.isMovingCard && c.GetSelectedCard() != nil {
+		card := c.GetSelectedCard()
+		// Determine final position (Snap on DROP)
+		card.WorldPos.X = c.Snap(card.WorldPos.X)
+		card.WorldPos.Y = c.Snap(card.WorldPos.Y)
+		c.Refresh()
+	}
+	t.isMovingCard = false
+}
+
+// CardTool handles creation of Mosu cards only
+type CardTool struct {
+	startPos   fyne.Position // World Coordinates
+	isDragging bool
+}
+
+func (t *CardTool) Name() string           { return "Card Tool" }
+func (t *CardTool) Cursor() desktop.Cursor { return desktop.CrosshairCursor }
+
+func (t *CardTool) OnTapped(c Canvas, e *fyne.PointEvent) {
+	// Card Tool now purely creates.
+	// We don't select cards here anymore to avoid determining "select vs create" ambiguity.
+}
+
+func (t *CardTool) OnDragged(c Canvas, e *fyne.DragEvent) {
+	// Create New Card (Ghost Rect)
 	if !t.isDragging {
 		// Start Creation
 		t.isDragging = true
@@ -190,47 +239,43 @@ func (t *CardTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 }
 
 func (t *CardTool) OnDragEnd(c Canvas) {
-	t.isMovingCard = false
-
 	if t.isDragging {
 		t.isDragging = false
 		c.GhostRect().Hide()
 
-		// Finalize Creation using the last calculated ghost rect properties
-		// We re-derive world coordinates from the ghost rect to ensure consistency
+		// Determine final loop from ghost rect
 		gPos := c.GhostRect().Position()
 		gSize := c.GhostRect().Size()
 
 		worldPos := c.ScreenToWorld(gPos)
-
-		// Re-snap the final position to be absolutely sure
 		worldPos.X = c.Snap(worldPos.X)
 		worldPos.Y = c.Snap(worldPos.Y)
 
 		worldW := gSize.Width / c.GetScale()
 		worldH := gSize.Height / c.GetScale()
 
-		// If too small (e.g. accidental click without drag), ignore
 		if worldW <= 1 || worldH <= 1 {
 			c.Refresh()
 			return
 		}
 
-		// Create Card
 		cardID := fmt.Sprintf("card_%d", len(c.ContentContainer().Objects))
-		newCard := cards.NewMosuWidget(cardID, theme.CardWhite)
+		newCard := cards.NewMosuWidget(cardID, theme.CardBg)
 
-		// Use the snapped values we calculated for the ghost rect directly
 		// This avoids any Screen -> World floating point drift
 		newCard.WorldPos = fyne.NewPos(c.Snap(worldPos.X), c.Snap(worldPos.Y))
 		newCard.WorldSize = fyne.NewSize(c.SnapUp(worldW), c.SnapUp(worldH))
+		newCard.RefreshContent() // Ensure content is parsed (default empty)
 
 		c.AddObject(newCard)
+
+		// Animate
+		AnimateCardBounce(c, newCard)
+
 		c.Refresh()
 	}
 }
 
-// DrawTool implementation
 type DrawTool struct {
 	lastDrawPos fyne.Position
 	isDrawing   bool
@@ -244,7 +289,7 @@ func (t *DrawTool) OnTapped(c Canvas, e *fyne.PointEvent) {}
 func (t *DrawTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 	if !t.isDrawing {
 		t.isDrawing = true
-		t.lastDrawPos = e.Position // Start in screen space
+		t.lastDrawPos = e.Position
 	}
 
 	if math.Abs(float64(e.Position.X-t.lastDrawPos.X)) < 2 && math.Abs(float64(e.Position.Y-t.lastDrawPos.Y)) < 2 {
@@ -298,9 +343,14 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 			}
 		}
 
-		// Stroke lines handling would need access to the wrapper type or helper
-		// Since we handle collision in Canvas usually, maybe delegate "RemoveAt(pos)"?
-		// For now, let's skip line erasure in this refactor step until we finalize data model.
+		if line, ok := obj.(*canvas.Line); ok {
+
+			if pointNearSegment(screenPos, line.Position1, line.Position2, 10.0) {
+				c.RemoveObject(obj)
+				c.Refresh()
+				return
+			}
+		}
 	}
 }
 

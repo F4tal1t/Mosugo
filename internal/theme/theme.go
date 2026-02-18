@@ -18,6 +18,7 @@ var (
 	CardYellow    = color.RGBA{255, 247, 164, 255}
 	CardTurquoise = color.RGBA{160, 194, 255, 255}
 	CardPink      = color.RGBA{255, 208, 196, 255}
+	CardBg        = CardYellow // Default card background
 	GridLine      = color.RGBA{190, 190, 190, 255}
 	GridBg        = color.RGBA{220, 220, 220, 255}
 	SelectionBlue = color.RGBA{100, 150, 255, 255}
@@ -43,6 +44,8 @@ func (t *MosugoTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Co
 		return color.RGBA{0, 64, 92, 255}
 	case theme.ColorNamePrimary:
 		return color.RGBA{0, 113, 162, 255}
+	case theme.ColorNameInputBackground:
+		return color.Transparent
 	}
 	return t.Theme.Color(n, v)
 }

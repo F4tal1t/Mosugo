@@ -66,8 +66,8 @@ func (c *MosugoCanvas) SetSelectedCard(card *cards.MosuWidget) { c.selectedCard 
 func (c *MosugoCanvas) SetTool(t tools.ToolType) {
 	c.CurrentTool = t
 	switch t {
-	case tools.ToolPan:
-		c.ActiveTool = &tools.PanTool{}
+	case tools.ToolSelect:
+		c.ActiveTool = &tools.SelectTool{}
 	case tools.ToolCard:
 		c.ActiveTool = &tools.CardTool{}
 	case tools.ToolDraw:
@@ -75,7 +75,7 @@ func (c *MosugoCanvas) SetTool(t tools.ToolType) {
 	case tools.ToolErase:
 		c.ActiveTool = &tools.EraseTool{}
 	default:
-		c.ActiveTool = &tools.CardTool{}
+		c.ActiveTool = &tools.SelectTool{}
 	}
 	c.Refresh()
 }
@@ -125,8 +125,8 @@ func NewMosugoCanvas() *MosugoCanvas {
 	c := &MosugoCanvas{
 		Offset:      fyne.NewPos(0, 0),
 		Scale:       1.0,
-		CurrentTool: tools.ToolCard,
-		ActiveTool:  &tools.CardTool{}, // Default tool
+		CurrentTool: tools.ToolSelect,
+		ActiveTool:  &tools.SelectTool{},
 		StrokeWidth: 2,
 		StrokeColor: theme.InkGrey,
 		strokesMap:  make(map[*canvas.Line]StrokeCoords),
@@ -286,22 +286,21 @@ func (c *MosugoCanvas) Tapped(e *fyne.PointEvent) {
 	}
 }
 
-func (c *MosugoCanvas) TappedSecondary(e *fyne.PointEvent) {
-	// Usually secondary tap (right click) might just be context menu
-	// But in some apps it pans.
-	// For now, let's allow PanTool activation or just ignore if tool doesn't handle it
-	// But our interface doesn't have OnTappedSecondary.
-	// We can implement Pan interrupt here?
-	c.isPanning = true // Keep old behavior or delegate?
-	c.panStart = e.Position
-	// Actually, let's invoke dragging logic if it moves?
-	// But TappedSecondary is a click, not drag.
+func (c *MosugoCanvas) MouseDown(e *desktop.MouseEvent) {
+	if e.Button == desktop.MouseButtonSecondary {
+		c.isPanning = true
+		c.panStart = e.Position
+	}
+}
+
+func (c *MosugoCanvas) MouseUp(e *desktop.MouseEvent) {
+	if e.Button == desktop.MouseButtonSecondary {
+		c.isPanning = false
+	}
 }
 
 func (c *MosugoCanvas) Dragged(e *fyne.DragEvent) {
-	// If right-mouse drag (often handled as Panning globally regardless of tool)
-	// Fyne doesn't distinguish button in Dragged event easily unless we track MouseDown.
-	// But c.isPanning is set by TappedSecondary?
+	// Panning takes precedence if right-mouse is held
 	if c.isPanning {
 		delta := e.Position.Subtract(c.panStart)
 		c.Offset.X += delta.X
