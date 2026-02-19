@@ -119,6 +119,8 @@ type MosugoCanvas struct {
 
 	StrokeWidth float32
 	StrokeColor color.Color
+
+	lastScale float32
 }
 
 func NewMosugoCanvas() *MosugoCanvas {
@@ -171,8 +173,21 @@ func (r *mosugoRenderer) Layout(size fyne.Size) {
 	}
 
 	if r.canvas.Grid != nil {
-		r.canvas.Grid.Resize(size)
-		r.canvas.Grid.Move(fyne.NewPos(0, 0))
+		gSize := float64(GridSize) * float64(r.canvas.Scale)
+
+		if gSize < 1 {
+			gSize = 1
+		}
+
+		shiftX := math.Mod(float64(r.canvas.Offset.X), gSize)
+		shiftY := math.Mod(float64(r.canvas.Offset.Y), gSize)
+
+		posX := shiftX - gSize
+		posY := shiftY - gSize
+
+		newSize := size.Add(fyne.NewSize(float32(gSize*2), float32(gSize*2)))
+		r.canvas.Grid.Resize(newSize)
+		r.canvas.Grid.Move(fyne.NewPos(float32(posX), float32(posY)))
 	}
 
 	if r.canvas.Content != nil {
@@ -197,7 +212,6 @@ func (r *mosugoRenderer) Layout(size fyne.Size) {
 				// Ghost rect logic handled by Tool
 			} else if line, ok := obj.(*canvas.Line); ok {
 				// Handle Lines (World -> Screen)
-				// We need a map to store world coordinates. See MosugoCanvas struct.
 				if coords, ok := r.canvas.GetStrokeCoords(line); ok {
 					p1 := r.canvas.WorldToScreen(coords.P1)
 					p2 := r.canvas.WorldToScreen(coords.P2)
@@ -264,6 +278,13 @@ func (r *mosugoRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *mosugoRenderer) Refresh() {
+	if r.canvas.Grid != nil {
+		if r.canvas.lastScale != r.canvas.Scale {
+			r.canvas.lastScale = r.canvas.Scale
+			r.canvas.Grid.Refresh()
+		}
+	}
+
 	r.Layout(r.canvas.Size())
 	canvas.Refresh(r.canvas.Content)
 }
@@ -273,9 +294,9 @@ func (c *MosugoCanvas) Cursor() desktop.Cursor {
 	case tools.ToolCard:
 		return desktop.CrosshairCursor
 	case tools.ToolDraw:
-		return desktop.TextCursor // Closest to a 'pencil' or precision cursor in standard set
+		return desktop.TextCursor
 	case tools.ToolErase:
-		return desktop.HResizeCursor // Placeholder, or use Default if no better option
+		return desktop.HResizeCursor
 	}
 	return desktop.DefaultCursor
 }

@@ -9,26 +9,38 @@ import (
 
 type MosugoTheme struct {
 	fyne.Theme
+	comicFont fyne.Resource
 }
 
 var (
 	InkGrey       = color.RGBA{130, 130, 140, 255}
 	InkLightGrey  = color.RGBA{160, 160, 170, 255}
-	CardWhite     = color.RGBA{255, 255, 255, 255}
+	InkWhite      = color.RGBA{255, 255, 255, 255}
 	CardYellow    = color.RGBA{255, 247, 164, 255}
 	CardTurquoise = color.RGBA{160, 194, 255, 255}
 	CardPink      = color.RGBA{255, 208, 196, 255}
-	CardBg        = CardYellow // Default card background
+	CardBg        = color.RGBA{0, 31, 45, 255}
 	GridLine      = color.RGBA{190, 190, 190, 255}
 	GridBg        = color.RGBA{220, 220, 220, 255}
 	SelectionBlue = color.RGBA{100, 150, 255, 255}
 )
 
 func NewMosugoTheme() fyne.Theme {
-	return &MosugoTheme{Theme: theme.DefaultTheme()}
+	comicFont, err := fyne.LoadResourceFromPath("assets/Comic.ttf")
+	if err != nil {
+		// Fallback to default theme if font loading fails
+		return &MosugoTheme{Theme: theme.DefaultTheme()}
+	}
+	return &MosugoTheme{
+		Theme:     theme.DefaultTheme(),
+		comicFont: comicFont,
+	}
 }
 
 func (t *MosugoTheme) Font(s fyne.TextStyle) fyne.Resource {
+	if t.comicFont != nil {
+		return t.comicFont
+	}
 	return t.Theme.Font(s)
 }
 

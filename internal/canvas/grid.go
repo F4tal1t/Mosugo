@@ -19,38 +19,30 @@ func BoxGridPattern(c *MosugoCanvas, gridSize int, lineColor, bgColor color.Colo
 			devScale = 1.0
 		}
 
-		offX := float64(c.Offset.X)
-		offY := float64(c.Offset.Y)
-		gSize := float64(gridSize)
+		gSize := float64(gridSize) * devScale
 
-		lx := (float64(x) + 0.5) / devScale
-		ly := (float64(y) + 0.5) / devScale
+		distX := math.Abs(math.Remainder(float64(x), gSize))
+		distY := math.Abs(math.Remainder(float64(y), gSize))
 
-		wx := (lx - offX) / zoom
-		wy := (ly - offY) / zoom
+		thickness := 1 * devScale
 
-		distX := math.Abs(math.Remainder(wx, gSize))
-		distY := math.Abs(math.Remainder(wy, gSize))
-
-		physDistX := distX * zoom * devScale
-		physDistY := distY * zoom * devScale
-
-		const thickness = 0.55
-
-		isVertical := physDistX < thickness
-		isHorizontal := physDistY < thickness
+		isVertical := distX < thickness
+		isHorizontal := distY < thickness
 
 		if !isVertical && !isHorizontal {
 			return bgColor
 		}
 
+		wx := (float64(x) / devScale)
+		wy := (float64(y) / devScale)
+
 		if isVertical {
-			if int(math.Abs(wy)/4)%2 == 0 {
+			if int(math.Abs(wy)/3)%2 == 0 {
 				return lineColor
 			}
 		}
 		if isHorizontal {
-			if int(math.Abs(wx)/4)%2 == 0 {
+			if int(math.Abs(wx)/3)%2 == 0 {
 				return lineColor
 			}
 		}

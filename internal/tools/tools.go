@@ -30,7 +30,7 @@ type Canvas interface {
 	// Object modification
 	AddObject(o fyne.CanvasObject)
 	RemoveObject(o fyne.CanvasObject)
-	ContentContainer() *fyne.Container // Access for iteration
+	ContentContainer() *fyne.Container
 	AddStroke(p1, p2 fyne.Position)
 
 	// Visual helpers
@@ -41,7 +41,6 @@ type Canvas interface {
 	SetSelectedCard(c *cards.MosuWidget)
 }
 
-// Tool defines the behavior for interaction modes
 type Tool interface {
 	Name() string
 	Cursor() desktop.Cursor
@@ -50,11 +49,9 @@ type Tool interface {
 	OnDragEnd(c Canvas)
 }
 
-// --- Concrete Tool Implementations ---
-
-// SelectTool handles selection and movement of cards
 type SelectTool struct {
 	isMovingCard bool
+	rawPos       fyne.Position
 }
 
 func (t *SelectTool) Name() string           { return "Select Tool" }
@@ -122,7 +119,8 @@ func (t *SelectTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 					c.SetSelectedCard(mosuW)
 					mosuW.SetSelected(true)
 					t.isMovingCard = true // Start moving mode
-					break                 // Found the target
+					t.rawPos = mosuW.WorldPos
+					break // Found the target
 				}
 			}
 		}
@@ -141,14 +139,11 @@ func (t *SelectTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 		dx := e.Dragged.DX / scale
 		dy := e.Dragged.DY / scale
 
-		card.WorldPos.X += dx
-		card.WorldPos.Y += dy
+		t.rawPos.X += dx
+		t.rawPos.Y += dy
 
-		// Do not SNAP during drag to allow smooth movement
-		// Only snap on drag end if desired, or implementation of a better "snap-to-grid"
-		// If we snap every frame with small deltas, we lose the float precision necessary for smooth dragging
-		// card.WorldPos.X = c.Snap(card.WorldPos.X)
-		// card.WorldPos.Y = c.Snap(card.WorldPos.Y)
+		card.WorldPos.X = c.Snap(t.rawPos.X)
+		card.WorldPos.Y = c.Snap(t.rawPos.Y)
 
 		c.Refresh()
 		return
@@ -166,7 +161,6 @@ func (t *SelectTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 func (t *SelectTool) OnDragEnd(c Canvas) {
 	if t.isMovingCard && c.GetSelectedCard() != nil {
 		card := c.GetSelectedCard()
-		// Determine final position (Snap on DROP)
 		card.WorldPos.X = c.Snap(card.WorldPos.X)
 		card.WorldPos.Y = c.Snap(card.WorldPos.Y)
 		c.Refresh()
@@ -174,19 +168,17 @@ func (t *SelectTool) OnDragEnd(c Canvas) {
 	t.isMovingCard = false
 }
 
-// CardTool handles creation of Mosu cards only
 type CardTool struct {
-	startPos   fyne.Position // World Coordinates
+	startPos   fyne.Position
 	isDragging bool
+}
+
+func (t *CardTool) OnTapped(c Canvas, e *fyne.PointEvent) {
+
 }
 
 func (t *CardTool) Name() string           { return "Card Tool" }
 func (t *CardTool) Cursor() desktop.Cursor { return desktop.CrosshairCursor }
-
-func (t *CardTool) OnTapped(c Canvas, e *fyne.PointEvent) {
-	// Card Tool now purely creates.
-	// We don't select cards here anymore to avoid determining "select vs create" ambiguity.
-}
 
 func (t *CardTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 	// Create New Card (Ghost Rect)

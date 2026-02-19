@@ -129,7 +129,7 @@ func (r *metaballRenderer) generator(w, h int) image.Image {
 
 			// 2. SDF for Tab
 			tabRad := 15 * scale
-			sdTab := sdBox(relX-tabCX, relY-tabCY, tW/1.4-tabRad, tH/2.8-tabRad) - tabRad
+			sdTab := sdBox(relX-tabCX, relY-tabCY, tW/1.4-tabRad, tH/2-tabRad) - tabRad
 
 			// 3. Union (Merge Border and Tab)
 			dFinal := opSmoothUnion(sdFrame, sdTab, k)
