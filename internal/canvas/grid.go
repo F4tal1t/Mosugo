@@ -9,11 +9,6 @@ import (
 
 func BoxGridPattern(c *MosugoCanvas, gridSize int, lineColor, bgColor color.Color) *canvas.Raster {
 	return canvas.NewRasterWithPixels(func(x, y, w, h int) color.Color {
-		zoom := float64(c.Scale)
-		if zoom <= 0 {
-			zoom = 1.0
-		}
-
 		devScale := float64(c.DeviceScale)
 		if devScale <= 0 {
 			devScale = 1.0

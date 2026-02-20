@@ -1,3 +1,6 @@
+// Package tools implements the tool state machine for Mosugo's drawing modes.
+// It provides four tool types (Select, Card, Draw, Erase) that handle mouse events
+// and translate them into canvas operations. Tools are selected via numpad keys 1-4.
 package tools
 
 import (
@@ -12,7 +15,6 @@ import (
 	"mosugo/internal/theme"
 )
 
-// Canvas interface allows tools to interact with the main MosugoCanvas.
 type Canvas interface {
 	Refresh()
 
@@ -106,11 +108,6 @@ func (t *SelectTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 
 	// 2. If we aren't already moving a card, check if we clicked on one
 	if !t.isMovingCard {
-		scale := c.GetScale()
-		if scale <= 0 {
-			scale = 1.0
-		}
-
 		objects := c.ContentContainer().Objects
 		// Iterate backwards (top-most first)
 		for i := len(objects) - 1; i >= 0; i-- {
@@ -389,16 +386,20 @@ func (t *EraseTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 func (t *EraseTool) OnDragEnd(c Canvas) {}
 
 func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
-	objects := c.ContentContainer().Objects
+	// First try to erase cards
+	if t.eraseCardAt(c, screenPos) {
+		return
+	}
+	// Then try to erase strokes
+	t.eraseStrokeAt(c, screenPos)
+}
 
-	// First, check for cards
+func (t *EraseTool) eraseCardAt(c Canvas, screenPos fyne.Position) bool {
+	objects := c.ContentContainer().Objects
 	for i := len(objects) - 1; i >= 0; i-- {
 		obj := objects[i]
-
-		// Handle Cards
 		if mosuW, ok := obj.(*cards.MosuWidget); ok {
-			sPos := c.WorldToScreen(mosuW.WorldPos)
-			sPos = mosuW.Position()
+			sPos := mosuW.Position()
 			sSize := mosuW.Size()
 
 			if screenPos.X >= sPos.X && screenPos.X <= sPos.X+sSize.Width &&
@@ -406,82 +407,90 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 				c.RemoveObject(obj)
 				c.MarkDirty()
 				c.Refresh()
-				return
+				return true
 			}
 		}
 	}
+	return false
+}
 
-	// Then, check for strokes - erase entire stroke group
+func (t *EraseTool) eraseStrokeAt(c Canvas, screenPos fyne.Position) {
+	objects := c.ContentContainer().Objects
 	for i := len(objects) - 1; i >= 0; i-- {
 		obj := objects[i]
 
 		if line, ok := obj.(*canvas.Line); ok {
 			if pointNearSegment(screenPos, line.Position1, line.Position2, 10.0) {
-				// Found a line segment, get its stroke ID
 				strokeID, hasID := c.GetStrokeID(line)
 
 				if !hasID || !c.ValidateStrokeID(strokeID) {
-					// No valid stroke ID - try to find paired glow line and remove both
-					// Check if this is a glow line or regular line
-					var regularLine, glowLine *canvas.Line
-					if c.IsGlowLine(line) {
-						glowLine = line
-						// Find the paired regular line at same position
-						for _, o := range objects {
-							if l, ok := o.(*canvas.Line); ok && l != line {
-								if l.Position1 == line.Position1 && l.Position2 == line.Position2 {
-									regularLine = l
-									break
-								}
-							}
-						}
-					} else {
-						regularLine = line
-						// Find the paired glow line at same position
-						for _, o := range objects {
-							if l, ok := o.(*canvas.Line); ok && l != line && c.IsGlowLine(l) {
-								if l.Position1 == line.Position1 && l.Position2 == line.Position2 {
-									glowLine = l
-									break
-								}
-							}
-						}
-					}
-					
-					// Remove both lines
-					if regularLine != nil {
-						c.RemoveObject(regularLine)
-					}
-					if glowLine != nil {
-						c.RemoveObject(glowLine)
-					}
-					
-					c.MarkDirty()
-					c.Refresh()
+					t.removePairedLines(c, objects, line)
 					return
 				}
 
-				// Collect all lines with the same stroke ID
-				toRemove := []fyne.CanvasObject{}
-				for _, o := range objects {
-					if l, ok := o.(*canvas.Line); ok {
-						if id, exists := c.GetStrokeID(l); exists && id == strokeID {
-							toRemove = append(toRemove, l)
-						}
-					}
-				}
-
-				// Remove all segments of this stroke
-				for _, o := range toRemove {
-					c.RemoveObject(o)
-				}
-
-				c.MarkDirty()
-				c.Refresh()
+				t.removeStrokeByID(c, objects, strokeID)
 				return
 			}
 		}
 	}
+}
+
+func (t *EraseTool) removePairedLines(c Canvas, objects []fyne.CanvasObject, line *canvas.Line) {
+	regularLine, glowLine := t.findPairedLines(c, objects, line)
+	if regularLine != nil {
+		c.RemoveObject(regularLine)
+	}
+	if glowLine != nil {
+		c.RemoveObject(glowLine)
+	}
+	c.MarkDirty()
+	c.Refresh()
+}
+
+func (t *EraseTool) findPairedLines(c Canvas, objects []fyne.CanvasObject, line *canvas.Line) (*canvas.Line, *canvas.Line) {
+	var regularLine, glowLine *canvas.Line
+
+	if c.IsGlowLine(line) {
+		glowLine = line
+		regularLine = t.findMatchingLine(objects, line, false, c)
+	} else {
+		regularLine = line
+		glowLine = t.findMatchingLine(objects, line, true, c)
+	}
+
+	return regularLine, glowLine
+}
+
+func (t *EraseTool) findMatchingLine(objects []fyne.CanvasObject, target *canvas.Line, isGlow bool, c Canvas) *canvas.Line {
+	for _, o := range objects {
+		if l, ok := o.(*canvas.Line); ok && l != target {
+			if isGlow && c.IsGlowLine(l) && l.Position1 == target.Position1 && l.Position2 == target.Position2 {
+				return l
+			}
+			if !isGlow && !c.IsGlowLine(l) && l.Position1 == target.Position1 && l.Position2 == target.Position2 {
+				return l
+			}
+		}
+	}
+	return nil
+}
+
+func (t *EraseTool) removeStrokeByID(c Canvas, objects []fyne.CanvasObject, strokeID int) {
+	toRemove := []fyne.CanvasObject{}
+	for _, o := range objects {
+		if l, ok := o.(*canvas.Line); ok {
+			if id, exists := c.GetStrokeID(l); exists && id == strokeID {
+				toRemove = append(toRemove, l)
+			}
+		}
+	}
+
+	for _, o := range toRemove {
+		c.RemoveObject(o)
+	}
+
+	c.MarkDirty()
+	c.Refresh()
 }
 
 func pointNearSegment(p, a, b fyne.Position, threshold float32) bool {

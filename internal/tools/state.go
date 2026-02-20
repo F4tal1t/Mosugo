@@ -3,8 +3,7 @@ package tools
 type ToolType int
 
 const (
-	ToolSelect ToolType = iota // Default tool
-	ToolPan                    // Kept for backward compat if needed, but Select is primary
+	ToolSelect ToolType = iota
 	ToolCard
 	ToolDraw
 	ToolErase

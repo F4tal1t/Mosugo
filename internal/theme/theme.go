@@ -1,7 +1,11 @@
+// Package theme provides the custom Fyne theme for Mosugo.
+// It defines the color palette (ink grey tones, card colors) and
+// font configuration for the application's visual style.
 package theme
 
 import (
 	"image/color"
+	"mosugo/assets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -26,11 +30,12 @@ var (
 )
 
 func NewMosugoTheme() fyne.Theme {
-	comicFont, err := fyne.LoadResourceFromPath("assets/Comic.ttf")
+	data, err := assets.FS.ReadFile("Comic.ttf")
 	if err != nil {
 		// Fallback to default theme if font loading fails
 		return &MosugoTheme{Theme: theme.DefaultTheme()}
 	}
+	comicFont := fyne.NewStaticResource("Comic.ttf", data)
 	return &MosugoTheme{
 		Theme:     theme.DefaultTheme(),
 		comicFont: comicFont,

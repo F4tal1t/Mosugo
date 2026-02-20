@@ -1,3 +1,6 @@
+// Package ui provides custom UI components for Mosugo.
+// It includes the canvas container with SDF-based metaball border rendering
+// and the calendar widget for navigating between daily workspaces.
 package ui
 
 import (
@@ -71,6 +74,7 @@ type MetaballBorder struct {
 	renderer *metaballRenderer
 }
 
+// NewMetaballBorder creates a new MetaballBorder widget with the specified color.
 func NewMetaballBorder(c color.Color) *MetaballBorder {
 	m := &MetaballBorder{
 		BorderColor:         c,

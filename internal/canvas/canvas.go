@@ -1,3 +1,7 @@
+// Package canvas provides the infinite zoomable canvas implementation for Mosugo.
+// It handles coordinate transformations between world space (infinite canvas coordinates)
+// and screen space (viewport pixels), manages pan/zoom state, and provides the main
+// drawing surface for cards and freehand strokes.
 package canvas
 
 import (
@@ -44,14 +48,11 @@ func (c *MosugoCanvas) WorldToScreen(pos fyne.Position) fyne.Position {
 	return fyne.NewPos(x, y)
 }
 
-// --- tools.Canvas Implementation ---
-
-func (c *MosugoCanvas) GetOffset() fyne.Position         { return c.Offset }
-func (c *MosugoCanvas) SetOffset(pos fyne.Position)      { c.Offset = pos }
-func (c *MosugoCanvas) GetScale() float32                { return c.Scale }
-func (c *MosugoCanvas) AddObject(o fyne.CanvasObject)    { c.Content.Add(o) }
+func (c *MosugoCanvas) GetOffset() fyne.Position      { return c.Offset }
+func (c *MosugoCanvas) SetOffset(pos fyne.Position)   { c.Offset = pos }
+func (c *MosugoCanvas) GetScale() float32             { return c.Scale }
+func (c *MosugoCanvas) AddObject(o fyne.CanvasObject) { c.Content.Add(o) }
 func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) {
-	// If it's a line, clean up the stroke maps
 	if line, ok := o.(*canvas.Line); ok {
 		delete(c.strokesMap, line)
 		delete(c.strokeIDMap, line)
@@ -59,19 +60,19 @@ func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) {
 	}
 	c.Content.Remove(o)
 }
+
 func (c *MosugoCanvas) SetCursor(cur desktop.Cursor) {
 
 	c.Refresh()
 }
-func (c *MosugoCanvas) ContentObject() fyne.CanvasObject { return c.Content }
 
+func (c *MosugoCanvas) ContentObject() fyne.CanvasObject       { return c.Content }
 func (c *MosugoCanvas) Snap(v float32) float32                 { return snap(v) }
 func (c *MosugoCanvas) SnapUp(v float32) float32               { return snapUp(v) }
 func (c *MosugoCanvas) ContentContainer() *fyne.Container      { return c.Content }
 func (c *MosugoCanvas) GhostRect() *canvas.Rectangle           { return c.ghostRect }
 func (c *MosugoCanvas) GetSelectedCard() *cards.MosuWidget     { return c.selectedCard }
 func (c *MosugoCanvas) SetSelectedCard(card *cards.MosuWidget) { c.selectedCard = card }
-
 func (c *MosugoCanvas) SetTool(t tools.ToolType) {
 	c.CurrentTool = t
 	switch t {
@@ -91,6 +92,9 @@ func (c *MosugoCanvas) SetTool(t tools.ToolType) {
 
 // -----------------------------------
 
+// MosugoCanvas is the main infinite zoomable canvas widget.
+// It handles coordinate transformations between world space and screen space,
+// manages cards and strokes, and delegates tool interactions to the active tool.
 type MosugoCanvas struct {
 	widget.BaseWidget
 
@@ -104,19 +108,12 @@ type MosugoCanvas struct {
 	CurrentTool tools.ToolType
 	ActiveTool  tools.Tool
 
-	dragStart    fyne.Position
 	ghostRect    *canvas.Rectangle
-	isDragging   bool
 	selectedCard *cards.MosuWidget
-	dragOffset   fyne.Position
 
 	isPanning bool
 	panStart  fyne.Position
 
-	isDraggingCard bool
-	cardDragStart  fyne.Position
-
-	isDrawing     bool
 	currentStroke []*canvas.Line
 	strokes       [][]*canvas.Line
 
@@ -124,8 +121,6 @@ type MosugoCanvas struct {
 	strokeIDMap  map[*canvas.Line]int
 	glowLines    map[*canvas.Line]bool
 	nextStrokeID int
-
-	lastDrawPos fyne.Position
 
 	StrokeWidth float32
 	StrokeColor color.Color
@@ -138,6 +133,8 @@ type MosugoCanvas struct {
 	onDirty     func() // Callback when canvas becomes dirty
 }
 
+// NewMosugoCanvas creates and initializes a new MosugoCanvas with default settings.
+// The canvas starts at 1:1 scale with zero offset and the Select tool active.
 func NewMosugoCanvas() *MosugoCanvas {
 	c := &MosugoCanvas{
 		Offset:       fyne.NewPos(0, 0),
@@ -158,7 +155,7 @@ func NewMosugoCanvas() *MosugoCanvas {
 	c.Grid = BoxGridPattern(c, GridSize, theme.GridLine, theme.GridBg)
 	c.Content = container.NewWithoutLayout()
 
-	c.ghostRect = canvas.NewRectangle(theme.InkLightGrey)
+	c.ghostRect = canvas.NewRectangle(theme.GridBg)
 	c.ghostRect.StrokeColor = theme.GridLine
 	c.ghostRect.StrokeWidth = 2
 	c.ghostRect.Hide()
@@ -168,6 +165,7 @@ func NewMosugoCanvas() *MosugoCanvas {
 	return c
 }
 
+// CreateRenderer creates and returns the widget renderer for the canvas.
 func (c *MosugoCanvas) CreateRenderer() fyne.WidgetRenderer {
 	return &mosugoRenderer{canvas: c}
 }
@@ -176,8 +174,10 @@ type mosugoRenderer struct {
 	canvas *MosugoCanvas
 }
 
+// Destroy cleans up the renderer resources.
 func (r *mosugoRenderer) Destroy() {}
 
+// Layout positions and sizes all canvas objects based on the current view.
 func (r *mosugoRenderer) Layout(size fyne.Size) {
 	// Update device scale cache
 	if drv := fyne.CurrentApp().Driver(); drv != nil {
@@ -252,10 +252,12 @@ func (r *mosugoRenderer) Layout(size fyne.Size) {
 // Stroke Management Helpers
 // ------------------------------------------------------------------
 
+// StrokeCoords holds the world-space start and end positions of a stroke line.
 type StrokeCoords struct {
 	P1, P2 fyne.Position
 }
 
+// AddStroke adds a new stroke line to the canvas with the specified coordinates and stroke ID.
 func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
 	// Defensive check: ensure stroke ID is valid
 	if !c.ValidateStrokeID(strokeID) {
@@ -270,7 +272,7 @@ func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
 	c.Content.Add(glowLine)
 	c.RegisterStroke(glowLine, p1, p2, strokeID)
 	c.glowLines[glowLine] = true
-	
+
 	line := canvas.NewLine(c.StrokeColor)
 	line.StrokeWidth = c.StrokeWidth
 	line.Position1 = c.WorldToScreen(p1)
@@ -279,6 +281,7 @@ func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
 	c.RegisterStroke(line, p1, p2, strokeID)
 }
 
+// RegisterStroke associates stroke metadata with a line object for tracking.
 func (c *MosugoCanvas) RegisterStroke(line *canvas.Line, p1, p2 fyne.Position, strokeID int) {
 	if c.strokesMap == nil {
 		c.strokesMap = make(map[*canvas.Line]StrokeCoords)
@@ -290,6 +293,7 @@ func (c *MosugoCanvas) RegisterStroke(line *canvas.Line, p1, p2 fyne.Position, s
 	c.strokeIDMap[line] = strokeID
 }
 
+// GetStrokeCoords retrieves the world coordinates for a given stroke line.
 func (c *MosugoCanvas) GetStrokeCoords(line *canvas.Line) (StrokeCoords, bool) {
 	if c.strokesMap == nil {
 		return StrokeCoords{}, false
@@ -298,6 +302,7 @@ func (c *MosugoCanvas) GetStrokeCoords(line *canvas.Line) (StrokeCoords, bool) {
 	return coords, ok
 }
 
+// GetStrokePoints retrieves the start and end points of a stroke line in world coordinates.
 func (c *MosugoCanvas) GetStrokePoints(line *canvas.Line) (fyne.Position, fyne.Position, bool) {
 	if c.strokesMap == nil {
 		return fyne.Position{}, fyne.Position{}, false
@@ -321,6 +326,7 @@ func (c *MosugoCanvas) IsGlowLine(line *canvas.Line) bool {
 	return c.glowLines[line]
 }
 
+// GenerateStrokeID creates a unique ID for a new stroke.
 func (c *MosugoCanvas) GenerateStrokeID() int {
 	id := c.nextStrokeID
 	c.nextStrokeID++
@@ -402,23 +408,17 @@ func distance(p1, p2 fyne.Position) float32 {
 	return float32(math.Sqrt(float64(dx*dx + dy*dy)))
 }
 
-func removeObj(s []fyne.CanvasObject, r fyne.CanvasObject) []fyne.CanvasObject {
-	for i, v := range s {
-		if v == r {
-			return append(s[:i], s[i+1:]...)
-		}
-	}
-	return s
-}
-
+// MinSize returns the minimum size for the canvas renderer.
 func (r *mosugoRenderer) MinSize() fyne.Size {
 	return fyne.NewSize(100, 100)
 }
 
+// Objects returns the list of drawable objects for the canvas.
 func (r *mosugoRenderer) Objects() []fyne.CanvasObject {
 	return []fyne.CanvasObject{r.canvas.Grid, r.canvas.Content}
 }
 
+// Refresh triggers a redraw of the canvas.
 func (r *mosugoRenderer) Refresh() {
 	if r.canvas.Grid != nil {
 		if r.canvas.lastScale != r.canvas.Scale {
@@ -431,6 +431,7 @@ func (r *mosugoRenderer) Refresh() {
 	canvas.Refresh(r.canvas.Content)
 }
 
+// Cursor returns the appropriate cursor style based on the active tool.
 func (c *MosugoCanvas) Cursor() desktop.Cursor {
 	switch c.CurrentTool {
 	case tools.ToolCard:
@@ -443,12 +444,14 @@ func (c *MosugoCanvas) Cursor() desktop.Cursor {
 	return desktop.DefaultCursor
 }
 
+// Tapped handles single tap/click events on the canvas.
 func (c *MosugoCanvas) Tapped(e *fyne.PointEvent) {
 	if c.ActiveTool != nil {
 		c.ActiveTool.OnTapped(c, e)
 	}
 }
 
+// MouseDown handles mouse button down events (for middle-click pan).
 func (c *MosugoCanvas) MouseDown(e *desktop.MouseEvent) {
 	if e.Button == desktop.MouseButtonSecondary {
 		c.isPanning = true
@@ -456,12 +459,14 @@ func (c *MosugoCanvas) MouseDown(e *desktop.MouseEvent) {
 	}
 }
 
+// MouseUp handles mouse button release events.
 func (c *MosugoCanvas) MouseUp(e *desktop.MouseEvent) {
 	if e.Button == desktop.MouseButtonSecondary {
 		c.isPanning = false
 	}
 }
 
+// Dragged handles drag events and delegates to the active tool.
 func (c *MosugoCanvas) Dragged(e *fyne.DragEvent) {
 	// Panning takes precedence if right-mouse is held
 	if c.isPanning {
@@ -478,6 +483,7 @@ func (c *MosugoCanvas) Dragged(e *fyne.DragEvent) {
 	}
 }
 
+// DragEnd handles the end of drag events.
 func (c *MosugoCanvas) DragEnd() {
 	if c.isPanning {
 		c.isPanning = false
@@ -487,67 +493,6 @@ func (c *MosugoCanvas) DragEnd() {
 	if c.ActiveTool != nil {
 		c.ActiveTool.OnDragEnd(c)
 	}
-}
-
-func (c *MosugoCanvas) pointNearLine(pt fyne.Position, line *canvas.Line, threshold float32) bool {
-	x0, y0 := pt.X, pt.Y
-	x1, y1 := line.Position1.X, line.Position1.Y
-	x2, y2 := line.Position2.X, line.Position2.Y
-
-	dx := x2 - x1
-	dy := y2 - y1
-	lengthSq := dx*dx + dy*dy
-
-	if lengthSq < 0.0001 {
-		dist := float32(math.Sqrt(float64((x0-x1)*(x0-x1) + (y0-y1)*(y0-y1))))
-		return dist <= threshold
-	}
-
-	t := ((x0-x1)*dx + (y0-y1)*dy) / lengthSq
-	if t < 0 {
-		t = 0
-	} else if t > 1 {
-		t = 1
-	}
-
-	nearX := x1 + t*dx
-	nearY := y1 + t*dy
-	dist := float32(math.Sqrt(float64((x0-nearX)*(x0-nearX) + (y0-nearY)*(y0-nearY))))
-
-	return dist <= threshold
-}
-
-func (c *MosugoCanvas) animateCardFadeIn(card *cards.MosuWidget) {
-	steps := 20
-	duration := 200 * time.Millisecond
-	stepDuration := duration / time.Duration(steps)
-
-	originalSize := card.WorldSize
-	for i := 0; i <= steps; i++ {
-		progress := float32(i) / float32(steps)
-		scale := 0.8 + 0.2*progress
-
-		scaledW := originalSize.Width * scale
-		scaledH := originalSize.Height * scale
-
-		offsetX := (originalSize.Width - scaledW) / 2
-		offsetY := (originalSize.Height - scaledH) / 2
-
-		screenX := float32(int(card.WorldPos.X)+int(c.Offset.X)) + offsetX
-		screenY := float32(int(card.WorldPos.Y)+int(c.Offset.Y)) + offsetY
-
-		card.Move(fyne.NewPos(screenX, screenY))
-		card.Resize(fyne.NewSize(scaledW, scaledH))
-		card.Refresh()
-
-		time.Sleep(stepDuration)
-	}
-
-	card.Resize(originalSize)
-	screenX := float32(int(card.WorldPos.X) + int(c.Offset.X))
-	screenY := float32(int(card.WorldPos.Y) + int(c.Offset.Y))
-	card.Move(fyne.NewPos(screenX, screenY))
-	card.Refresh()
 }
 
 // --- Persistence Methods ---
@@ -670,14 +615,14 @@ func (c *MosugoCanvas) LoadWorkspace(date time.Time) error {
 	for _, strokeData := range state.Strokes {
 		p1 := fyne.NewPos(strokeData.P1X, strokeData.P1Y)
 		p2 := fyne.NewPos(strokeData.P2X, strokeData.P2Y)
-		
+
 		// Migrate invalid stroke IDs (backward compatibility)
 		strokeID := strokeData.StrokeID
 		if !c.ValidateStrokeID(strokeID) {
 			// Assign new valid ID for corrupted/old strokes
 			strokeID = c.GenerateStrokeID()
 		}
-		
+
 		c.AddStroke(p1, p2, strokeID)
 
 		// Track maximum stroke ID for next ID generation
@@ -696,6 +641,7 @@ func (c *MosugoCanvas) LoadWorkspace(date time.Time) error {
 	return nil
 }
 
+// ClearCanvas removes all cards and strokes from the canvas.
 func (c *MosugoCanvas) ClearCanvas() {
 	objectsToRemove := []fyne.CanvasObject{}
 	for _, obj := range c.Content.Objects {

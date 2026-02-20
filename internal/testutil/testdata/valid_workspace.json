@@ -1,0 +1,29 @@
+{
+  "scale": 1.5,
+  "offset_x": 100.0,
+  "offset_y": 200.0,
+  "cards": [
+    {
+      "id": "test-card-1",
+      "content": "# Test Card\n- Item 1\n[] Checkbox\n[x] Done",
+      "pos_x": 150.5,
+      "pos_y": 250.5,
+      "width": 300.0,
+      "height": 200.0,
+      "color_index": 0,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "strokes": [
+    {
+      "p1_x": 0.0,
+      "p1_y": 0.0,
+      "p2_x": 100.0,
+      "p2_y": 100.0,
+      "color_index": 0,
+      "width": 2.0,
+      "stroke_id": 1
+    }
+  ],
+  "date": "2024-01-15"
+}

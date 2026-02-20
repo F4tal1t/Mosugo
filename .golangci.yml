@@ -1,0 +1,59 @@
+run:
+  timeout: 5m
+  tests: true
+  build-tags: []
+  
+
+linters:
+  enable:
+    - gofmt          # Check formatting
+    - goimports      # Check import order and unused imports
+    - govet          # Standard Go vet checks
+    - errcheck       # Check that errors are handled
+    - staticcheck    # Advanced static analysis
+    - unused         # Find unused code
+    - gosimple       # Suggest code simplifications
+    - ineffassign    # Detect useless assignments
+    - misspell       # Fix common spelling mistakes
+    - unparam        # Find unused function parameters
+    - revive         # Fast, flexible linter (replaces golint)
+    - typecheck      # Type-check code
+    - copyloopvar    # Check for loop variable capture issues
+    - gocyclo        # Check cyclomatic complexity
+    - dupl           # Find duplicate code
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: true  
+        arguments:
+          - "checkPrivateReceivers"
+          - "disableStutteringCheck"
+      - name: package-comments
+        severity: warning
+        disabled: false
+  
+  gocyclo:
+    min-complexity: 15
+  
+  errcheck:
+    check-blank: false
+    check-type-assertions: false
+  
+  goimports:
+    local-prefixes: github.com/F4tal1t/Mosugo
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl

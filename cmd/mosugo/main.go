@@ -1,3 +1,4 @@
+// Package main is the entry point for the Mosugo spatial notes application.
 package main
 
 import (
@@ -14,10 +15,15 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"mosugo/assets"
 	mosuCanvas "mosugo/internal/canvas"
 	"mosugo/internal/theme"
 	"mosugo/internal/tools"
 	"mosugo/internal/ui"
+)
+
+const (
+	Version = "1.0.0"
 )
 
 var (
@@ -25,9 +31,17 @@ var (
 	toolButtons []*widget.Button
 )
 
+func loadEmbeddedResource(path string) (fyne.Resource, error) {
+	data, err := assets.FS.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return fyne.NewStaticResource(path, data), nil
+}
+
 func createToolButton(iconPath string, tool tools.ToolType, mosugoCanvas *mosuCanvas.MosugoCanvas) *widget.Button {
 	var icon fyne.Resource
-	if res, err := fyne.LoadResourceFromPath(iconPath); err == nil {
+	if res, err := loadEmbeddedResource(iconPath); err == nil {
 		icon = res
 	} else {
 		log.Println("Could not load icon:", iconPath, err)
@@ -48,22 +62,10 @@ func createToolButton(iconPath string, tool tools.ToolType, mosugoCanvas *mosuCa
 	return btn
 }
 
-func main() {
-	a := app.NewWithID("com.mosugo")
-	a.Settings().SetTheme(theme.NewMosugoTheme())
-
-	w := a.NewWindow("Mosugo")
-	w.Resize(fyne.NewSize(600, 500))
-	w.SetPadded(false)
-
-	if icon, err := fyne.LoadResourceFromPath("assets/Mosugo_Icon.png"); err == nil {
-		w.SetIcon(icon)
-	}
-
+func setupCanvas(today time.Time) *mosuCanvas.MosugoCanvas {
 	mosugoCanvas := mosuCanvas.NewMosugoCanvas()
 
 	var autoSaveTimer *time.Timer
-
 	mosugoCanvas.SetOnDirty(func() {
 		if autoSaveTimer != nil {
 			autoSaveTimer.Stop()
@@ -78,36 +80,39 @@ func main() {
 		})
 	})
 
-	// Load today's workspace on startup
-	today := time.Now()
 	if err := mosugoCanvas.LoadWorkspace(today); err != nil {
 		log.Println("Could not load today's workspace:", err)
 	}
 
-	selectBtn := createToolButton("assets/select.svg", tools.ToolSelect, mosugoCanvas)
-	cardBtn := createToolButton("assets/card.svg", tools.ToolCard, mosugoCanvas)
-	drawBtn := createToolButton("assets/draw.svg", tools.ToolDraw, mosugoCanvas)
-	eraseBtn := createToolButton("assets/eraser.svg", tools.ToolErase, mosugoCanvas)
+	return mosugoCanvas
+}
+
+func setupToolbar(mosugoCanvas *mosuCanvas.MosugoCanvas) *fyne.Container {
+	selectBtn := createToolButton("select.svg", tools.ToolSelect, mosugoCanvas)
+	cardBtn := createToolButton("card.svg", tools.ToolCard, mosugoCanvas)
+	drawBtn := createToolButton("draw.svg", tools.ToolDraw, mosugoCanvas)
+	eraseBtn := createToolButton("eraser.svg", tools.ToolErase, mosugoCanvas)
 
 	toolbarButtons := container.NewGridWrap(fyne.NewSize(35, 35),
-		selectBtn,
-		cardBtn,
-		drawBtn,
-		eraseBtn,
+		selectBtn, cardBtn, drawBtn, eraseBtn,
 	)
 
-	// creating Metaball Border Overlay
+	leftPadding := canvas.NewRectangle(color.Transparent)
+	leftPadding.SetMinSize(fyne.NewSize(5, 0))
+
+	toolbarAligned := container.NewHBox(leftPadding, toolbarButtons, layout.NewSpacer())
+	return container.NewVBox(layout.NewSpacer(), toolbarAligned, layout.NewSpacer())
+}
+
+func setupBorderAndCalendar(today time.Time, mosugoCanvas *mosuCanvas.MosugoCanvas) *ui.MetaballBorder {
 	metaBorder := ui.NewMetaballBorder(BorderColor)
 	metaBorder.SetCurrentDate(today)
 
-	// Calendar content with date selection callback
 	calendarContent := ui.NewCalendarContent(today, func(selectedDate time.Time) {
-		// Save current workspace before switching
 		if err := mosugoCanvas.SaveCurrentWorkspace(); err != nil {
 			log.Println("Failed to save workspace:", err)
 		}
 
-		// Load selected date's workspace
 		if err := mosugoCanvas.LoadWorkspace(selectedDate); err != nil {
 			log.Println("Failed to load workspace for", selectedDate.Format("2006-01-02"), ":", err)
 		} else {
@@ -120,39 +125,12 @@ func main() {
 	})
 
 	metaBorder.SetCalendarContent(calendarContent)
+	return metaBorder
+}
 
-	// canvas layer
-	canvasLayer := mosugoCanvas
-
-	// border Overlay (Frame + Tab Background)
-	borderLayer := metaBorder
-
-	leftPadding := canvas.NewRectangle(color.Transparent)
-	leftPadding.SetMinSize(fyne.NewSize(5, 0))
-
-	toolbarAligned := container.NewHBox(
-		leftPadding,
-		toolbarButtons,
-		layout.NewSpacer(),
-	)
-
-	toolbarLayer := container.NewVBox(
-		layout.NewSpacer(),
-		toolbarAligned,
-		layout.NewSpacer(),
-	)
-
-	finalLayout := container.NewStack(
-		canvasLayer,
-		borderLayer,
-		toolbarLayer,
-	)
-
+func setupKeyboardShortcuts(w fyne.Window, mosugoCanvas *mosuCanvas.MosugoCanvas, metaBorder *ui.MetaballBorder) {
 	if deskCanvas, ok := w.Canvas().(desktop.Canvas); ok {
 		deskCanvas.SetOnKeyDown(func(key *fyne.KeyEvent) {
-			var targetBtn *widget.Button
-			var targetTool tools.ToolType
-
 			switch key.Name {
 			case fyne.Key1, "KP1":
 				mosugoCanvas.SetTool(tools.ToolCard)
@@ -169,22 +147,11 @@ func main() {
 			case fyne.KeyEscape:
 				mosugoCanvas.SetTool(tools.ToolCard)
 			}
-			if targetBtn != nil {
-				mosugoCanvas.SetTool(targetTool)
-				for _, b := range toolButtons {
-					b.Importance = widget.LowImportance
-					b.Refresh()
-				}
-				targetBtn.Importance = widget.HighImportance
-				targetBtn.Refresh()
-			}
 		})
 	}
 
-	// Add keyboard shortcuts using canvas shortcuts
 	ctrlS := &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(ctrlS, func(shortcut fyne.Shortcut) {
-		// Ctrl+S - Force save
 		if err := mosugoCanvas.SaveCurrentWorkspace(); err != nil {
 			log.Println("Manual save failed:", err)
 		} else {
@@ -194,7 +161,6 @@ func main() {
 
 	ctrlLeft := &desktop.CustomShortcut{KeyName: fyne.KeyLeft, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(ctrlLeft, func(shortcut fyne.Shortcut) {
-		// Ctrl+Left - Previous day
 		currentDate := mosugoCanvas.GetCurrentDate()
 		previousDay := currentDate.AddDate(0, 0, -1)
 
@@ -226,6 +192,28 @@ func main() {
 
 		fmt.Println("Navigated to:", nextDay.Format("2006-01-02"))
 	})
+}
+
+func main() {
+	a := app.NewWithID("com.mosugo")
+	a.Settings().SetTheme(theme.NewMosugoTheme())
+
+	w := a.NewWindow("Mosugo")
+	w.Resize(fyne.NewSize(600, 500))
+	w.SetPadded(false)
+
+	if icon, err := loadEmbeddedResource("Mosugo_Icon.png"); err == nil {
+		w.SetIcon(icon)
+	}
+
+	today := time.Now()
+	mosugoCanvas := setupCanvas(today)
+	toolbarLayer := setupToolbar(mosugoCanvas)
+	metaBorder := setupBorderAndCalendar(today, mosugoCanvas)
+
+	finalLayout := container.NewStack(mosugoCanvas, metaBorder, toolbarLayer)
+
+	setupKeyboardShortcuts(w, mosugoCanvas, metaBorder)
 
 	w.SetContent(finalLayout)
 	w.ShowAndRun()

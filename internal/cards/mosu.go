@@ -1,3 +1,6 @@
+// Package cards implements the MosuWidget card system for creating note cards on the canvas.
+// Cards support markdown-like checkbox syntax ([x] for checked, [] for unchecked) and
+// provide custom rendering with colored borders and text wrapping.
 package cards
 
 import (
@@ -210,11 +213,10 @@ func (c *compactVBoxLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return minSize
 }
 
-// MosuWidget represents a card on the canvas
 type MosuWidget struct {
 	widget.BaseWidget
-	ID        string
-	CreatedAt time.Time
+	ID         string
+	CreatedAt  time.Time
 	ColorIndex int
 
 	WorldPos  fyne.Position
@@ -248,10 +250,8 @@ func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
 	m.contentVBox = container.NewVBox()
 	m.contentVBox.Layout = &compactVBoxLayout{spacing: 2}
 
-	// Add scroll container to handle vertical overflow
 	scrollContent := container.NewVScroll(m.contentVBox)
-	
-	// Add custom padding around scrollable content
+
 	paddedContent := container.New(
 		&paddedLayout{padding: 16},
 		scrollContent,
@@ -335,10 +335,6 @@ func (r *customCheckRenderer) Layout(s fyne.Size) {
 	iconSize := float32(16)
 	padding := float32(8)
 
-	// CHECKBOX POSITION - Adjust these Y values to align with text
-	// Current: Y=4 for ring, Y=7 for dot
-	// Increase Y to move checkbox DOWN
-	// Decrease Y to move checkbox UP
 	r.ring.Resize(fyne.NewSize(iconSize, iconSize))
 	r.ring.Move(fyne.NewPos(0, 4)) //
 
@@ -449,7 +445,6 @@ func (m *MosuWidget) Tapped(_ *fyne.PointEvent) {
 }
 
 func (m *MosuWidget) FocusGained() {
-	
 }
 
 func (m *MosuWidget) FocusLost() {

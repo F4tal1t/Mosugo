@@ -1,3 +1,7 @@
+// Package storage handles JSON-based persistence of workspace data.
+// It implements a daily workspace model where each day's cards and strokes
+// are saved to a separate JSON file, providing automatic versioning and
+// easy navigation through time.
 package storage
 
 import (
@@ -12,7 +16,7 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-// MosuData represents the serializable data for a Mosu card
+// MosuData represents the serializable data for a Mosu card.
 type MosuData struct {
 	ID        string    `json:"id"`
 	Content   string    `json:"content"`
@@ -24,7 +28,9 @@ type MosuData struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// StrokeData represents a drawing stroke with its world coordinates
+// StrokeData represents a drawing stroke with its world coordinates.
+// Each stroke is a line segment defined by two points (P1, P2) with
+// color, width, and a unique ID for grouping related segments.
 type StrokeData struct {
 	P1X      float32 `json:"p1_x"`
 	P1Y      float32 `json:"p1_y"`
@@ -35,7 +41,7 @@ type StrokeData struct {
 	StrokeID int     `json:"stroke_id"`
 }
 
-// WorkspaceState represents the complete state of a workspace for a specific date
+// WorkspaceState represents the complete state of a workspace for a specific date.
 type WorkspaceState struct {
 	Scale   float32      `json:"scale"`
 	OffsetX float32      `json:"offset_x"`
@@ -45,8 +51,10 @@ type WorkspaceState struct {
 	Date    string       `json:"date"` // YYYY-MM-DD format
 }
 
-// Windows: %APPDATA%\Roaming\Mosugo\
-// Linux: ~/.config/Mosugo/
+// GetStoragePath returns the platform-specific storage directory for Mosugo workspaces.
+// On Windows: %APPDATA%\Roaming\Mosugo\
+// On Linux: ~/.config/Mosugo/
+// The directory is created if it doesn't exist.
 func GetStoragePath() (string, error) {
 	// Get user config directory
 	configDir, err := os.UserConfigDir()
@@ -136,14 +144,12 @@ func LoadWorkspace(date time.Time) (WorkspaceState, error) {
 	return state, nil
 }
 
-// ListSavedDates returns a sorted list of dates that have saved workspaces
 func ListSavedDates() ([]time.Time, error) {
 	storagePath, err := GetStoragePath()
 	if err != nil {
 		return nil, err
 	}
 
-	// Read directory
 	files, err := os.ReadDir(storagePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read storage directory: %w", err)

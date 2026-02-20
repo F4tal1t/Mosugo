@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Release
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      
+      - name: Download dependencies
+        run: go mod download
+      
+      - name: Build executable with Fyne
+        run: fyne package -os windows -name Mosugo -icon assets/Mosugo_Icon.png
+      
+      - name: Rename output
+        run: Rename-Item -Path "Mosugo.exe" -NewName "Mosugo-Windows-x64.exe"
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Mosugo-Windows-x64.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    name: Build Linux Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      
+      - name: Download dependencies
+        run: go mod download
+      
+      - name: Build executable with Fyne
+        run: fyne package -os linux -name Mosugo -icon assets/Mosugo_Icon.png
+      
+      - name: Create tarball
+        run: tar -czf Mosugo-Linux-x64.tar.gz Mosugo
+      
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Mosugo-Linux-x64.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
