@@ -12,12 +12,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"mosugo/internal/cards"
+	"mosugo/internal/storage"
 	"mosugo/internal/theme"
 	"mosugo/internal/tools"
 )
 
 const (
-	GridSize = 40
+	GridSize = 30
 )
 
 func snap(v float32) float32 {
@@ -111,16 +112,20 @@ type MosugoCanvas struct {
 	currentStroke []*canvas.Line
 	strokes       [][]*canvas.Line
 
-	// Map to store World Coordinates of strokes for rendering
 	strokesMap map[*canvas.Line]StrokeCoords
+	glowLines  map[*canvas.Line]bool
 
-	// Drawing smoothing
 	lastDrawPos fyne.Position
 
 	StrokeWidth float32
 	StrokeColor color.Color
 
 	lastScale float32
+
+	// Persistence fields
+	currentDate time.Time
+	isDirty     bool
+	onDirty     func() // Callback when canvas becomes dirty
 }
 
 func NewMosugoCanvas() *MosugoCanvas {
@@ -129,17 +134,20 @@ func NewMosugoCanvas() *MosugoCanvas {
 		Scale:       1.0,
 		CurrentTool: tools.ToolSelect,
 		ActiveTool:  &tools.SelectTool{},
-		StrokeWidth: 2,
+		StrokeWidth: 2.5,
 		StrokeColor: theme.InkGrey,
 		strokesMap:  make(map[*canvas.Line]StrokeCoords),
+		glowLines:   make(map[*canvas.Line]bool),
+		currentDate: time.Now(),
+		isDirty:     false,
 	}
 	c.ExtendBaseWidget(c)
 
 	c.Grid = BoxGridPattern(c, GridSize, theme.GridLine, theme.GridBg)
 	c.Content = container.NewWithoutLayout()
 
-	c.ghostRect = canvas.NewRectangle(color.RGBA{100, 150, 255, 40})
-	c.ghostRect.StrokeColor = theme.SelectionBlue
+	c.ghostRect = canvas.NewRectangle(theme.InkLightGrey)
+	c.ghostRect.StrokeColor = theme.GridLine
 	c.ghostRect.StrokeWidth = 2
 	c.ghostRect.Hide()
 
@@ -211,13 +219,17 @@ func (r *mosugoRenderer) Layout(size fyne.Size) {
 			} else if rect, ok := obj.(*canvas.Rectangle); ok && rect == r.canvas.ghostRect {
 				// Ghost rect logic handled by Tool
 			} else if line, ok := obj.(*canvas.Line); ok {
-				// Handle Lines (World -> Screen)
 				if coords, ok := r.canvas.GetStrokeCoords(line); ok {
 					p1 := r.canvas.WorldToScreen(coords.P1)
 					p2 := r.canvas.WorldToScreen(coords.P2)
 					line.Position1 = p1
 					line.Position2 = p2
-					line.StrokeWidth = r.canvas.StrokeWidth * r.canvas.Scale
+
+					if r.canvas.glowLines[line] {
+						line.StrokeWidth = r.canvas.StrokeWidth * 2 * r.canvas.Scale
+					} else {
+						line.StrokeWidth = r.canvas.StrokeWidth * r.canvas.Scale
+					}
 				}
 			}
 		}
@@ -233,15 +245,18 @@ type StrokeCoords struct {
 }
 
 func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position) {
+	glowLine := canvas.NewLine(theme.GridBg)
+	glowLine.StrokeWidth = c.StrokeWidth * 1.5
+	glowLine.Position1 = c.WorldToScreen(p1)
+	glowLine.Position2 = c.WorldToScreen(p2)
+	c.Content.Add(glowLine)
+	c.RegisterStroke(glowLine, p1, p2)
+	c.glowLines[glowLine] = true
 	line := canvas.NewLine(c.StrokeColor)
 	line.StrokeWidth = c.StrokeWidth
-
-	// Initial placement
 	line.Position1 = c.WorldToScreen(p1)
 	line.Position2 = c.WorldToScreen(p2)
-
 	c.Content.Add(line)
-	// Register logical coordinates
 	c.RegisterStroke(line, p1, p2)
 }
 
@@ -406,4 +421,145 @@ func (c *MosugoCanvas) animateCardFadeIn(card *cards.MosuWidget) {
 	screenY := float32(int(card.WorldPos.Y) + int(c.Offset.Y))
 	card.Move(fyne.NewPos(screenX, screenY))
 	card.Refresh()
+}
+
+// --- Persistence Methods ---
+
+// MarkDirty marks the canvas as modified and triggers the dirty callback
+func (c *MosugoCanvas) MarkDirty() {
+	c.isDirty = true
+	if c.onDirty != nil {
+		c.onDirty()
+	}
+}
+
+// SetOnDirty sets the callback function to be called when the canvas becomes dirty
+func (c *MosugoCanvas) SetOnDirty(callback func()) {
+	c.onDirty = callback
+}
+
+// GetCurrentDate returns the date of the currently loaded workspace
+func (c *MosugoCanvas) GetCurrentDate() time.Time {
+	return c.currentDate
+}
+
+// SetCurrentDate sets the date of the workspace being worked on
+func (c *MosugoCanvas) SetCurrentDate(date time.Time) {
+	c.currentDate = date
+}
+
+// SaveCurrentWorkspace saves the current canvas state to storage
+func (c *MosugoCanvas) SaveCurrentWorkspace() error {
+	state := storage.WorkspaceState{
+		Scale:   c.Scale,
+		OffsetX: c.Offset.X,
+		OffsetY: c.Offset.Y,
+		Cards:   []storage.MosuData{},
+		Strokes: []storage.StrokeData{},
+		Date:    c.currentDate.Format("2006-01-02"),
+	}
+
+	// Collect cards
+	for _, obj := range c.Content.Objects {
+		if card, ok := obj.(*cards.MosuWidget); ok {
+			cardData := storage.MosuData{
+				ID:        card.ID,
+				Content:   card.GetText(),
+				PosX:      card.WorldPos.X,
+				PosY:      card.WorldPos.Y,
+				Width:     card.WorldSize.Width,
+				Height:    card.WorldSize.Height,
+				ColorIdx:  card.ColorIndex,
+				CreatedAt: card.CreatedAt,
+			}
+			state.Cards = append(state.Cards, cardData)
+		}
+	}
+
+	// Collect strokes
+	for line, coords := range c.strokesMap {
+		// Skip glow lines (only save the actual strokes)
+		if c.glowLines[line] {
+			continue
+		}
+
+		strokeData := storage.StrokeData{
+			P1X:      coords.P1.X,
+			P1Y:      coords.P1.Y,
+			P2X:      coords.P2.X,
+			P2Y:      coords.P2.Y,
+			ColorIdx: 0, // Default color index for now
+			Width:    c.StrokeWidth,
+		}
+		state.Strokes = append(state.Strokes, strokeData)
+	}
+
+	// Save to file
+	if err := storage.SaveWorkspace(c.currentDate, state); err != nil {
+		return err
+	}
+
+	c.isDirty = false
+	return nil
+}
+
+// LoadWorkspace loads a workspace from storage and replaces the current canvas state
+func (c *MosugoCanvas) LoadWorkspace(date time.Time) error {
+	// Load workspace state
+	state, err := storage.LoadWorkspace(date)
+	if err != nil {
+		return err
+	}
+
+	// Clear current canvas
+	c.ClearCanvas()
+
+	// Restore canvas state
+	c.Scale = state.Scale
+	c.Offset = fyne.NewPos(state.OffsetX, state.OffsetY)
+	c.currentDate = date
+
+	// Restore cards
+	for _, cardData := range state.Cards {
+		card := cards.NewMosuWidget(cardData.ID, theme.CardBg, cardData.ColorIdx)
+		card.WorldPos = fyne.NewPos(cardData.PosX, cardData.PosY)
+		card.WorldSize = fyne.NewSize(cardData.Width, cardData.Height)
+		card.CreatedAt = cardData.CreatedAt
+		card.SetText(cardData.Content)
+		card.RefreshContent()
+		c.Content.Add(card)
+	}
+
+	// Restore strokes
+	for _, strokeData := range state.Strokes {
+		p1 := fyne.NewPos(strokeData.P1X, strokeData.P1Y)
+		p2 := fyne.NewPos(strokeData.P2X, strokeData.P2Y)
+		c.AddStroke(p1, p2)
+	}
+
+	c.isDirty = false
+	c.Refresh()
+	return nil
+}
+
+func (c *MosugoCanvas) ClearCanvas() {
+
+	objectsToRemove := []fyne.CanvasObject{}
+	for _, obj := range c.Content.Objects {
+		if obj != c.ghostRect {
+			objectsToRemove = append(objectsToRemove, obj)
+		}
+	}
+
+	for _, obj := range objectsToRemove {
+		c.Content.Remove(obj)
+	}
+
+	// Clear stroke maps
+	c.strokesMap = make(map[*canvas.Line]StrokeCoords)
+	c.glowLines = make(map[*canvas.Line]bool)
+	c.strokes = [][]*canvas.Line{}
+	c.currentStroke = []*canvas.Line{}
+
+	c.selectedCard = nil
 }

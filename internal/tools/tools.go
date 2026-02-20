@@ -33,6 +33,9 @@ type Canvas interface {
 	ContentContainer() *fyne.Container
 	AddStroke(p1, p2 fyne.Position)
 
+	// Persistence
+	MarkDirty()
+
 	// Visual helpers
 	GhostRect() *canvas.Rectangle
 
@@ -204,13 +207,11 @@ func (t *CardTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 	x2 := float32(math.Max(float64(t.startPos.X), float64(currWorld.X)))
 	y2 := float32(math.Max(float64(t.startPos.Y), float64(currWorld.Y)))
 
-	// Snap Logic - round to nearest grid cell
 	snapX1 := c.Snap(x1)
 	snapY1 := c.Snap(y1)
 	snapX2 := c.SnapUp(x2)
 	snapY2 := c.SnapUp(y2)
 
-	// Ensure minimal size of 1 grid cell
 	if snapX2 <= snapX1 {
 		snapX2 = c.SnapUp(snapX1 + 1)
 	}
@@ -221,7 +222,7 @@ func (t *CardTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 	w := snapX2 - snapX1
 	h := snapY2 - snapY1
 
-	// Update Ghost Rect
+	//Ghost Rect Update
 	screenPos := c.WorldToScreen(fyne.NewPos(snapX1, snapY1))
 	screenSize := fyne.NewSize(w*c.GetScale(), h*c.GetScale())
 
@@ -252,7 +253,7 @@ func (t *CardTool) OnDragEnd(c Canvas) {
 		}
 
 		cardID := fmt.Sprintf("card_%d", len(c.ContentContainer().Objects))
-		newCard := cards.NewMosuWidget(cardID, theme.CardBg)
+		newCard := cards.NewMosuWidget(cardID, theme.CardBg, 0) // colorIndex 0 = default card color
 
 		// This avoids any Screen -> World floating point drift
 		newCard.WorldPos = fyne.NewPos(c.Snap(worldPos.X), c.Snap(worldPos.Y))
@@ -261,8 +262,9 @@ func (t *CardTool) OnDragEnd(c Canvas) {
 
 		c.AddObject(newCard)
 
-		// Animate
 		AnimateCardBounce(c, newCard)
+
+		c.MarkDirty()
 
 		c.Refresh()
 	}
@@ -298,6 +300,9 @@ func (t *DrawTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 }
 
 func (t *DrawTool) OnDragEnd(c Canvas) {
+	if t.isDrawing { // Only mark dirty if we actually drew something
+		c.MarkDirty()
+	}
 	t.isDrawing = false
 }
 
@@ -330,6 +335,7 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 			if screenPos.X >= sPos.X && screenPos.X <= sPos.X+sSize.Width &&
 				screenPos.Y >= sPos.Y && screenPos.Y <= sPos.Y+sSize.Height {
 				c.RemoveObject(obj)
+				c.MarkDirty()
 				c.Refresh()
 				return
 			}
@@ -339,6 +345,7 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 
 			if pointNearSegment(screenPos, line.Position1, line.Position2, 10.0) {
 				c.RemoveObject(obj)
+				c.MarkDirty()
 				c.Refresh()
 				return
 			}

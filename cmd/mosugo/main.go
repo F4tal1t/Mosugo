@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"log"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -52,10 +53,36 @@ func main() {
 	a.Settings().SetTheme(theme.NewMosugoTheme())
 
 	w := a.NewWindow("Mosugo")
-	w.Resize(fyne.NewSize(600, 400))
+	w.Resize(fyne.NewSize(600, 500))
 	w.SetPadded(false)
 
+	if icon, err := fyne.LoadResourceFromPath("assets/Mosugo_Icon.png"); err == nil {
+		w.SetIcon(icon)
+	}
+
 	mosugoCanvas := mosuCanvas.NewMosugoCanvas()
+
+	var autoSaveTimer *time.Timer
+
+	mosugoCanvas.SetOnDirty(func() {
+		if autoSaveTimer != nil {
+			autoSaveTimer.Stop()
+		}
+		autoSaveTimer = time.AfterFunc(2*time.Second, func() {
+			err := mosugoCanvas.SaveCurrentWorkspace()
+			if err != nil {
+				log.Println("Auto-save failed:", err)
+			} else {
+				fmt.Println("Auto-saved workspace for", mosugoCanvas.GetCurrentDate().Format("2006-01-02"))
+			}
+		})
+	})
+
+	// Load today's workspace on startup
+	today := time.Now()
+	if err := mosugoCanvas.LoadWorkspace(today); err != nil {
+		log.Println("Could not load today's workspace:", err)
+	}
 
 	selectBtn := createToolButton("assets/select.svg", tools.ToolSelect, mosugoCanvas)
 	cardBtn := createToolButton("assets/card.svg", tools.ToolCard, mosugoCanvas)
@@ -71,6 +98,28 @@ func main() {
 
 	// creating Metaball Border Overlay
 	metaBorder := ui.NewMetaballBorder(BorderColor)
+	metaBorder.SetCurrentDate(today)
+
+	// Calendar content with date selection callback
+	calendarContent := ui.NewCalendarContent(today, func(selectedDate time.Time) {
+		// Save current workspace before switching
+		if err := mosugoCanvas.SaveCurrentWorkspace(); err != nil {
+			log.Println("Failed to save workspace:", err)
+		}
+
+		// Load selected date's workspace
+		if err := mosugoCanvas.LoadWorkspace(selectedDate); err != nil {
+			log.Println("Failed to load workspace for", selectedDate.Format("2006-01-02"), ":", err)
+		} else {
+			fmt.Println("Switched to workspace:", selectedDate.Format("2006-01-02"))
+			metaBorder.SetCurrentDate(selectedDate)
+			if metaBorder.BottomTabExpanded {
+				metaBorder.ToggleCalendar()
+			}
+		}
+	})
+
+	metaBorder.SetCalendarContent(calendarContent)
 
 	// canvas layer
 	canvasLayer := mosugoCanvas
@@ -114,7 +163,9 @@ func main() {
 			case fyne.Key3, "KP3":
 				mosugoCanvas.SetTool(tools.ToolErase)
 				fmt.Println("Tool: Erase Mode")
-
+			case fyne.Key0, "KP0":
+				mosugoCanvas.SetTool(tools.ToolSelect)
+				fmt.Println("Tool: Select Mode")
 			case fyne.KeyEscape:
 				mosugoCanvas.SetTool(tools.ToolCard)
 			}
@@ -129,6 +180,52 @@ func main() {
 			}
 		})
 	}
+
+	// Add keyboard shortcuts using canvas shortcuts
+	ctrlS := &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}
+	w.Canvas().AddShortcut(ctrlS, func(shortcut fyne.Shortcut) {
+		// Ctrl+S - Force save
+		if err := mosugoCanvas.SaveCurrentWorkspace(); err != nil {
+			log.Println("Manual save failed:", err)
+		} else {
+			fmt.Println("Workspace saved manually")
+		}
+	})
+
+	ctrlLeft := &desktop.CustomShortcut{KeyName: fyne.KeyLeft, Modifier: fyne.KeyModifierControl}
+	w.Canvas().AddShortcut(ctrlLeft, func(shortcut fyne.Shortcut) {
+		// Ctrl+Left - Previous day
+		currentDate := mosugoCanvas.GetCurrentDate()
+		previousDay := currentDate.AddDate(0, 0, -1)
+
+		if err := mosugoCanvas.SaveCurrentWorkspace(); err != nil {
+			log.Println("Failed to save before navigating:", err)
+		}
+		if err := mosugoCanvas.LoadWorkspace(previousDay); err != nil {
+			log.Println("Failed to load previous day:", err)
+		} else {
+			metaBorder.SetCurrentDate(previousDay)
+		}
+
+		fmt.Println("Navigated to:", previousDay.Format("2006-01-02"))
+	})
+
+	ctrlRight := &desktop.CustomShortcut{KeyName: fyne.KeyRight, Modifier: fyne.KeyModifierControl}
+	w.Canvas().AddShortcut(ctrlRight, func(shortcut fyne.Shortcut) {
+		currentDate := mosugoCanvas.GetCurrentDate()
+		nextDay := currentDate.AddDate(0, 0, 1)
+
+		if err := mosugoCanvas.SaveCurrentWorkspace(); err != nil {
+			log.Println("Failed to save before navigating:", err)
+		}
+		if err := mosugoCanvas.LoadWorkspace(nextDay); err != nil {
+			log.Println("Failed to load next day:", err)
+		} else {
+			metaBorder.SetCurrentDate(nextDay)
+		}
+
+		fmt.Println("Navigated to:", nextDay.Format("2006-01-02"))
+	})
 
 	w.SetContent(finalLayout)
 	w.ShowAndRun()

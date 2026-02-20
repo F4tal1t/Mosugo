@@ -3,6 +3,7 @@ package cards
 import (
 	"image/color"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -212,7 +213,9 @@ func (c *compactVBoxLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 // MosuWidget represents a card on the canvas
 type MosuWidget struct {
 	widget.BaseWidget
-	ID string
+	ID        string
+	CreatedAt time.Time
+	ColorIndex int
 
 	WorldPos  fyne.Position
 	WorldSize fyne.Size
@@ -226,8 +229,12 @@ type MosuWidget struct {
 	cursorPos  int
 }
 
-func NewMosuWidget(id string, c color.Color) *MosuWidget {
-	m := &MosuWidget{ID: id}
+func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
+	m := &MosuWidget{
+		ID:         id,
+		CreatedAt:  time.Now(),
+		ColorIndex: colorIndex,
+	}
 	m.ExtendBaseWidget(m)
 
 	m.bg = canvas.NewRectangle(c)
@@ -520,4 +527,15 @@ func (m *MosuWidget) RefreshLayout(zoom float32) {
 
 	m.Move(fyne.NewPos(x, y))
 	m.Resize(fyne.NewSize(width, height))
+}
+
+// GetText returns the raw text content of the card
+func (m *MosuWidget) GetText() string {
+	return m.rawText
+}
+
+// SetText sets the text content of the card and refreshes the display
+func (m *MosuWidget) SetText(text string) {
+	m.rawText = text
+	m.cursorPos = len(text)
 }

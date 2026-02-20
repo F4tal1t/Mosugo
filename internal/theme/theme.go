@@ -17,7 +17,7 @@ var (
 	InkLightGrey  = color.RGBA{160, 160, 170, 255}
 	InkWhite      = color.RGBA{255, 255, 255, 255}
 	CardYellow    = color.RGBA{255, 247, 164, 255}
-	CardTurquoise = color.RGBA{160, 194, 255, 255}
+	CardTurquoise = color.RGBA{209, 205, 255, 255}
 	CardPink      = color.RGBA{255, 208, 196, 255}
 	CardBg        = color.RGBA{0, 31, 45, 255}
 	GridLine      = color.RGBA{190, 190, 190, 255}

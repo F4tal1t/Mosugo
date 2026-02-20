@@ -1,0 +1,10 @@
+[Details]
+Name = "Mosugo"
+Version = "1.0.0"
+Build = 1
+Identifier = "com.mosugo.app"
+Icon = "assets/Mosugo_Icon.png"
+
+[Windows]
+# Don't combine manifest (allows future customization)
+CombineManifest = false
