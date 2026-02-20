@@ -31,13 +31,21 @@ type Canvas interface {
 	AddObject(o fyne.CanvasObject)
 	RemoveObject(o fyne.CanvasObject)
 	ContentContainer() *fyne.Container
-	AddStroke(p1, p2 fyne.Position)
+	AddStroke(p1, p2 fyne.Position, strokeID int)
 
 	// Persistence
 	MarkDirty()
 
 	// Visual helpers
 	GhostRect() *canvas.Rectangle
+
+	// Stroke management
+	GenerateStrokeID() int
+	ValidateStrokeID(strokeID int) bool
+	GetStrokeID(line *canvas.Line) (int, bool)
+	IsGlowLine(line *canvas.Line) bool
+	SimplifyStroke(points []fyne.Position, epsilon float32) []fyne.Position
+	GetStrokePoints(line *canvas.Line) (fyne.Position, fyne.Position, bool)
 
 	// State needed for tools
 	GetSelectedCard() *cards.MosuWidget
@@ -255,10 +263,9 @@ func (t *CardTool) OnDragEnd(c Canvas) {
 		cardID := fmt.Sprintf("card_%d", len(c.ContentContainer().Objects))
 		newCard := cards.NewMosuWidget(cardID, theme.CardBg, 0) // colorIndex 0 = default card color
 
-		// This avoids any Screen -> World floating point drift
 		newCard.WorldPos = fyne.NewPos(c.Snap(worldPos.X), c.Snap(worldPos.Y))
 		newCard.WorldSize = fyne.NewSize(c.SnapUp(worldW), c.SnapUp(worldH))
-		newCard.RefreshContent() // Ensure content is parsed (default empty)
+		newCard.RefreshContent()
 
 		c.AddObject(newCard)
 
@@ -271,8 +278,10 @@ func (t *CardTool) OnDragEnd(c Canvas) {
 }
 
 type DrawTool struct {
-	lastDrawPos fyne.Position
-	isDrawing   bool
+	lastDrawPos     fyne.Position
+	isDrawing       bool
+	currentStrokeID int
+	strokeLines     []*canvas.Line
 }
 
 func (t *DrawTool) Name() string           { return "Draw Tool" }
@@ -283,27 +292,86 @@ func (t *DrawTool) OnTapped(c Canvas, e *fyne.PointEvent) {}
 func (t *DrawTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 	if !t.isDrawing {
 		t.isDrawing = true
+		// Generate stroke ID immediately for real-time drawing
+		t.currentStrokeID = c.GenerateStrokeID()
 		t.lastDrawPos = e.Position
-	}
-
-	if math.Abs(float64(e.Position.X-t.lastDrawPos.X)) < 2 && math.Abs(float64(e.Position.Y-t.lastDrawPos.Y)) < 2 {
+		t.strokeLines = []*canvas.Line{}
 		return
 	}
 
-	startWorld := c.ScreenToWorld(t.lastDrawPos)
-	endWorld := c.ScreenToWorld(e.Position)
+	// Check if moved significantly (reduce duplicate segments)
+	dx := e.Position.X - t.lastDrawPos.X
+	dy := e.Position.Y - t.lastDrawPos.Y
+	dist := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
-	c.AddStroke(startWorld, endWorld)
+	if dist >= 2.0 {
+		// Draw segment directly in real-time
+		startWorld := c.ScreenToWorld(t.lastDrawPos)
+		endWorld := c.ScreenToWorld(e.Position)
 
-	t.lastDrawPos = e.Position
-	c.Refresh()
+		c.AddStroke(startWorld, endWorld, t.currentStrokeID)
+
+		t.lastDrawPos = e.Position
+		c.Refresh()
+	}
 }
 
 func (t *DrawTool) OnDragEnd(c Canvas) {
-	if t.isDrawing { // Only mark dirty if we actually drew something
+	if t.isDrawing {
+		// Collect world coordinates from all line segments drawn
+		points := []fyne.Position{}
+		objects := c.ContentContainer().Objects
+
+		for _, obj := range objects {
+			if line, ok := obj.(*canvas.Line); ok {
+				if id, exists := c.GetStrokeID(line); exists && id == t.currentStrokeID {
+					p1, p2, ok := c.GetStrokePoints(line)
+					if ok {
+						if len(points) == 0 {
+							points = append(points, p1)
+						}
+						points = append(points, p2)
+					}
+				}
+			}
+		}
+
+		// Only simplify if we have enough points
+		if len(points) > 3 {
+			// Apply Douglas-Peucker simplification
+			simplifiedPoints := c.SimplifyStroke(points, 3.0)
+
+			// Remove original segments
+			toRemove := []fyne.CanvasObject{}
+			for _, obj := range objects {
+				if line, ok := obj.(*canvas.Line); ok {
+					if id, exists := c.GetStrokeID(line); exists && id == t.currentStrokeID {
+						toRemove = append(toRemove, line)
+					}
+				}
+			}
+
+			for _, obj := range toRemove {
+				c.RemoveObject(obj)
+			}
+
+			// Redraw with simplified points using same stroke ID
+			for i := 0; i < len(simplifiedPoints)-1; i++ {
+				p1 := simplifiedPoints[i]
+				p2 := simplifiedPoints[i+1]
+				c.AddStroke(p1, p2, t.currentStrokeID)
+			}
+		}
+
+		// Mark canvas as modified
 		c.MarkDirty()
+		c.Refresh()
 	}
+
+	// Reset state
 	t.isDrawing = false
+	t.strokeLines = nil
+	t.currentStrokeID = 0
 }
 
 // Erase Tool
@@ -321,8 +389,9 @@ func (t *EraseTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 func (t *EraseTool) OnDragEnd(c Canvas) {}
 
 func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
-
 	objects := c.ContentContainer().Objects
+
+	// First, check for cards
 	for i := len(objects) - 1; i >= 0; i-- {
 		obj := objects[i]
 
@@ -340,11 +409,73 @@ func (t *EraseTool) eraseAt(c Canvas, screenPos fyne.Position) {
 				return
 			}
 		}
+	}
+
+	// Then, check for strokes - erase entire stroke group
+	for i := len(objects) - 1; i >= 0; i-- {
+		obj := objects[i]
 
 		if line, ok := obj.(*canvas.Line); ok {
-
 			if pointNearSegment(screenPos, line.Position1, line.Position2, 10.0) {
-				c.RemoveObject(obj)
+				// Found a line segment, get its stroke ID
+				strokeID, hasID := c.GetStrokeID(line)
+
+				if !hasID || !c.ValidateStrokeID(strokeID) {
+					// No valid stroke ID - try to find paired glow line and remove both
+					// Check if this is a glow line or regular line
+					var regularLine, glowLine *canvas.Line
+					if c.IsGlowLine(line) {
+						glowLine = line
+						// Find the paired regular line at same position
+						for _, o := range objects {
+							if l, ok := o.(*canvas.Line); ok && l != line {
+								if l.Position1 == line.Position1 && l.Position2 == line.Position2 {
+									regularLine = l
+									break
+								}
+							}
+						}
+					} else {
+						regularLine = line
+						// Find the paired glow line at same position
+						for _, o := range objects {
+							if l, ok := o.(*canvas.Line); ok && l != line && c.IsGlowLine(l) {
+								if l.Position1 == line.Position1 && l.Position2 == line.Position2 {
+									glowLine = l
+									break
+								}
+							}
+						}
+					}
+					
+					// Remove both lines
+					if regularLine != nil {
+						c.RemoveObject(regularLine)
+					}
+					if glowLine != nil {
+						c.RemoveObject(glowLine)
+					}
+					
+					c.MarkDirty()
+					c.Refresh()
+					return
+				}
+
+				// Collect all lines with the same stroke ID
+				toRemove := []fyne.CanvasObject{}
+				for _, o := range objects {
+					if l, ok := o.(*canvas.Line); ok {
+						if id, exists := c.GetStrokeID(l); exists && id == strokeID {
+							toRemove = append(toRemove, l)
+						}
+					}
+				}
+
+				// Remove all segments of this stroke
+				for _, o := range toRemove {
+					c.RemoveObject(o)
+				}
+
 				c.MarkDirty()
 				c.Refresh()
 				return

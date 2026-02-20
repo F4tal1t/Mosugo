@@ -50,7 +50,15 @@ func (c *MosugoCanvas) GetOffset() fyne.Position         { return c.Offset }
 func (c *MosugoCanvas) SetOffset(pos fyne.Position)      { c.Offset = pos }
 func (c *MosugoCanvas) GetScale() float32                { return c.Scale }
 func (c *MosugoCanvas) AddObject(o fyne.CanvasObject)    { c.Content.Add(o) }
-func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) { c.Content.Remove(o) }
+func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) {
+	// If it's a line, clean up the stroke maps
+	if line, ok := o.(*canvas.Line); ok {
+		delete(c.strokesMap, line)
+		delete(c.strokeIDMap, line)
+		delete(c.glowLines, line)
+	}
+	c.Content.Remove(o)
+}
 func (c *MosugoCanvas) SetCursor(cur desktop.Cursor) {
 
 	c.Refresh()
@@ -112,8 +120,10 @@ type MosugoCanvas struct {
 	currentStroke []*canvas.Line
 	strokes       [][]*canvas.Line
 
-	strokesMap map[*canvas.Line]StrokeCoords
-	glowLines  map[*canvas.Line]bool
+	strokesMap   map[*canvas.Line]StrokeCoords
+	strokeIDMap  map[*canvas.Line]int
+	glowLines    map[*canvas.Line]bool
+	nextStrokeID int
 
 	lastDrawPos fyne.Position
 
@@ -130,16 +140,18 @@ type MosugoCanvas struct {
 
 func NewMosugoCanvas() *MosugoCanvas {
 	c := &MosugoCanvas{
-		Offset:      fyne.NewPos(0, 0),
-		Scale:       1.0,
-		CurrentTool: tools.ToolSelect,
-		ActiveTool:  &tools.SelectTool{},
-		StrokeWidth: 2.5,
-		StrokeColor: theme.InkGrey,
-		strokesMap:  make(map[*canvas.Line]StrokeCoords),
-		glowLines:   make(map[*canvas.Line]bool),
-		currentDate: time.Now(),
-		isDirty:     false,
+		Offset:       fyne.NewPos(0, 0),
+		Scale:        1.0,
+		CurrentTool:  tools.ToolSelect,
+		ActiveTool:   &tools.SelectTool{},
+		StrokeWidth:  2.5,
+		StrokeColor:  theme.InkGrey,
+		strokesMap:   make(map[*canvas.Line]StrokeCoords),
+		strokeIDMap:  make(map[*canvas.Line]int),
+		glowLines:    make(map[*canvas.Line]bool),
+		nextStrokeID: 1,
+		currentDate:  time.Now(),
+		isDirty:      false,
 	}
 	c.ExtendBaseWidget(c)
 
@@ -244,27 +256,38 @@ type StrokeCoords struct {
 	P1, P2 fyne.Position
 }
 
-func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position) {
+func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
+	// Defensive check: ensure stroke ID is valid
+	if !c.ValidateStrokeID(strokeID) {
+		// This shouldn't happen, but generate a valid ID if it does
+		strokeID = c.GenerateStrokeID()
+	}
+
 	glowLine := canvas.NewLine(theme.GridBg)
 	glowLine.StrokeWidth = c.StrokeWidth * 1.5
 	glowLine.Position1 = c.WorldToScreen(p1)
 	glowLine.Position2 = c.WorldToScreen(p2)
 	c.Content.Add(glowLine)
-	c.RegisterStroke(glowLine, p1, p2)
+	c.RegisterStroke(glowLine, p1, p2, strokeID)
 	c.glowLines[glowLine] = true
+	
 	line := canvas.NewLine(c.StrokeColor)
 	line.StrokeWidth = c.StrokeWidth
 	line.Position1 = c.WorldToScreen(p1)
 	line.Position2 = c.WorldToScreen(p2)
 	c.Content.Add(line)
-	c.RegisterStroke(line, p1, p2)
+	c.RegisterStroke(line, p1, p2, strokeID)
 }
 
-func (c *MosugoCanvas) RegisterStroke(line *canvas.Line, p1, p2 fyne.Position) {
+func (c *MosugoCanvas) RegisterStroke(line *canvas.Line, p1, p2 fyne.Position, strokeID int) {
 	if c.strokesMap == nil {
 		c.strokesMap = make(map[*canvas.Line]StrokeCoords)
 	}
+	if c.strokeIDMap == nil {
+		c.strokeIDMap = make(map[*canvas.Line]int)
+	}
 	c.strokesMap[line] = StrokeCoords{P1: p1, P2: p2}
+	c.strokeIDMap[line] = strokeID
 }
 
 func (c *MosugoCanvas) GetStrokeCoords(line *canvas.Line) (StrokeCoords, bool) {
@@ -273,6 +296,110 @@ func (c *MosugoCanvas) GetStrokeCoords(line *canvas.Line) (StrokeCoords, bool) {
 	}
 	coords, ok := c.strokesMap[line]
 	return coords, ok
+}
+
+func (c *MosugoCanvas) GetStrokePoints(line *canvas.Line) (fyne.Position, fyne.Position, bool) {
+	if c.strokesMap == nil {
+		return fyne.Position{}, fyne.Position{}, false
+	}
+	coords, ok := c.strokesMap[line]
+	return coords.P1, coords.P2, ok
+}
+
+func (c *MosugoCanvas) GetStrokeID(line *canvas.Line) (int, bool) {
+	if c.strokeIDMap == nil {
+		return 0, false
+	}
+	id, ok := c.strokeIDMap[line]
+	return id, ok
+}
+
+func (c *MosugoCanvas) IsGlowLine(line *canvas.Line) bool {
+	if c.glowLines == nil {
+		return false
+	}
+	return c.glowLines[line]
+}
+
+func (c *MosugoCanvas) GenerateStrokeID() int {
+	id := c.nextStrokeID
+	c.nextStrokeID++
+	return id
+}
+
+// ValidateStrokeID checks if a stroke ID is valid (non-zero)
+func (c *MosugoCanvas) ValidateStrokeID(strokeID int) bool {
+	return strokeID > 0
+}
+
+// SimplifyStroke uses Douglas-Peucker algorithm to reduce points while preserving shape
+// epsilon controls simplification aggressiveness (3.0 is recommended for good balance)
+func (c *MosugoCanvas) SimplifyStroke(points []fyne.Position, epsilon float32) []fyne.Position {
+	if len(points) < 3 {
+		return points
+	}
+
+	// Find point with maximum distance from line
+	dmax := float32(0)
+	index := 0
+	end := len(points) - 1
+
+	for i := 1; i < end; i++ {
+		d := perpendicularDistance(points[i], points[0], points[end])
+		if d > dmax {
+			index = i
+			dmax = d
+		}
+	}
+
+	// If max distance > epsilon, recursively simplify
+	if dmax > epsilon {
+		left := c.SimplifyStroke(points[:index+1], epsilon)
+		right := c.SimplifyStroke(points[index:], epsilon)
+		return append(left[:len(left)-1], right...)
+	}
+
+	return []fyne.Position{points[0], points[end]}
+}
+
+// perpendicularDistance calculates perpendicular distance from point to line segment
+func perpendicularDistance(point, lineStart, lineEnd fyne.Position) float32 {
+	dx := lineEnd.X - lineStart.X
+	dy := lineEnd.Y - lineStart.Y
+
+	// Calculate magnitude
+	mag := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+	if mag < 0.0001 {
+		return distance(point, lineStart)
+	}
+
+	// Normalize
+	dx /= mag
+	dy /= mag
+
+	// Vector from lineStart to point
+	pvx := point.X - lineStart.X
+	pvy := point.Y - lineStart.Y
+
+	// Get dot product (project pv onto normalized line)
+	dot := pvx*dx + pvy*dy
+
+	// Clamp to segment
+	if dot < 0 {
+		return distance(point, lineStart)
+	} else if dot > mag {
+		return distance(point, lineEnd)
+	}
+
+	// Perpendicular distance
+	return float32(math.Abs(float64(pvx*(-dy) + pvy*dx)))
+}
+
+// distance calculates Euclidean distance between two points
+func distance(p1, p2 fyne.Position) float32 {
+	dx := p2.X - p1.X
+	dy := p2.Y - p1.Y
+	return float32(math.Sqrt(float64(dx*dx + dy*dy)))
 }
 
 func removeObj(s []fyne.CanvasObject, r fyne.CanvasObject) []fyne.CanvasObject {
@@ -483,6 +610,13 @@ func (c *MosugoCanvas) SaveCurrentWorkspace() error {
 			continue
 		}
 
+		// Validate stroke ID before saving
+		strokeID, ok := c.GetStrokeID(line)
+		if !ok || !c.ValidateStrokeID(strokeID) {
+			// Skip strokes without valid IDs (shouldn't happen, but defensive)
+			continue
+		}
+
 		strokeData := storage.StrokeData{
 			P1X:      coords.P1.X,
 			P1Y:      coords.P1.Y,
@@ -490,6 +624,7 @@ func (c *MosugoCanvas) SaveCurrentWorkspace() error {
 			P2Y:      coords.P2.Y,
 			ColorIdx: 0, // Default color index for now
 			Width:    c.StrokeWidth,
+			StrokeID: strokeID,
 		}
 		state.Strokes = append(state.Strokes, strokeData)
 	}
@@ -531,10 +666,29 @@ func (c *MosugoCanvas) LoadWorkspace(date time.Time) error {
 	}
 
 	// Restore strokes
+	maxStrokeID := 0
 	for _, strokeData := range state.Strokes {
 		p1 := fyne.NewPos(strokeData.P1X, strokeData.P1Y)
 		p2 := fyne.NewPos(strokeData.P2X, strokeData.P2Y)
-		c.AddStroke(p1, p2)
+		
+		// Migrate invalid stroke IDs (backward compatibility)
+		strokeID := strokeData.StrokeID
+		if !c.ValidateStrokeID(strokeID) {
+			// Assign new valid ID for corrupted/old strokes
+			strokeID = c.GenerateStrokeID()
+		}
+		
+		c.AddStroke(p1, p2, strokeID)
+
+		// Track maximum stroke ID for next ID generation
+		if strokeID > maxStrokeID {
+			maxStrokeID = strokeID
+		}
+	}
+
+	// Set next stroke ID to avoid collisions
+	if maxStrokeID >= c.nextStrokeID {
+		c.nextStrokeID = maxStrokeID + 1
 	}
 
 	c.isDirty = false
@@ -543,7 +697,6 @@ func (c *MosugoCanvas) LoadWorkspace(date time.Time) error {
 }
 
 func (c *MosugoCanvas) ClearCanvas() {
-
 	objectsToRemove := []fyne.CanvasObject{}
 	for _, obj := range c.Content.Objects {
 		if obj != c.ghostRect {
@@ -557,9 +710,11 @@ func (c *MosugoCanvas) ClearCanvas() {
 
 	// Clear stroke maps
 	c.strokesMap = make(map[*canvas.Line]StrokeCoords)
+	c.strokeIDMap = make(map[*canvas.Line]int)
 	c.glowLines = make(map[*canvas.Line]bool)
 	c.strokes = [][]*canvas.Line{}
 	c.currentStroke = []*canvas.Line{}
+	c.nextStrokeID = 1
 
 	c.selectedCard = nil
 }

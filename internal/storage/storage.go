@@ -3,7 +3,6 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,6 +32,7 @@ type StrokeData struct {
 	P2Y      float32 `json:"p2_y"`
 	ColorIdx int     `json:"color_index"`
 	Width    float32 `json:"width"`
+	StrokeID int     `json:"stroke_id"`
 }
 
 // WorkspaceState represents the complete state of a workspace for a specific date
@@ -45,9 +45,7 @@ type WorkspaceState struct {
 	Date    string       `json:"date"` // YYYY-MM-DD format
 }
 
-// GetStoragePath returns the path to the Mosugo storage directory
 // Windows: %APPDATA%\Roaming\Mosugo\
-// macOS: ~/Library/Application Support/Mosugo/
 // Linux: ~/.config/Mosugo/
 func GetStoragePath() (string, error) {
 	// Get user config directory
@@ -96,7 +94,7 @@ func SaveWorkspace(date time.Time, state WorkspaceState) error {
 	}
 
 	// Write to file
-	if err := ioutil.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write workspace file: %w", err)
 	}
 
@@ -124,7 +122,7 @@ func LoadWorkspace(date time.Time) (WorkspaceState, error) {
 	}
 
 	// Read file
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return WorkspaceState{}, fmt.Errorf("failed to read workspace file: %w", err)
 	}
@@ -146,7 +144,7 @@ func ListSavedDates() ([]time.Time, error) {
 	}
 
 	// Read directory
-	files, err := ioutil.ReadDir(storagePath)
+	files, err := os.ReadDir(storagePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read storage directory: %w", err)
 	}
