@@ -1,3 +1,4 @@
+// Package testutil provides utility functions and sample data for testing the Mosugo application.
 package testutil
 
 import (

@@ -204,8 +204,10 @@ func (m *MetaballBorder) ToggleCalendar() {
 			}
 
 			m.currentBottomHeight = startHeight + (targetHeight-startHeight)*t
-			// Only refresh layout during animation, not the raster
-			m.RefreshLayout()
+			// Dispatch layout refresh onto the Fyne main thread
+			fyne.Do(func() {
+				m.RefreshLayout()
+			})
 
 			time.Sleep(duration / time.Duration(steps))
 		}
@@ -216,8 +218,10 @@ func (m *MetaballBorder) ToggleCalendar() {
 		if m.renderer != nil {
 			m.renderer.isAnimating = false
 		}
-		// Final refresh with raster update
-		m.Refresh()
+		// Final refresh with raster update – must be on main thread
+		fyne.Do(func() {
+			m.Refresh()
+		})
 	}()
 }
 

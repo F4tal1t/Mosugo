@@ -63,82 +63,12 @@ func (r *coloredLabelRenderer) Refresh() {
 }
 
 func (r *coloredLabelRenderer) Layout(size fyne.Size) {
-	// Handle text with existing newlines and wrap long lines
-	if strings.Contains(r.label.Text, "\n") {
-		// Text already has newlines, preserve them
-		r.text.Text = r.label.Text
-	} else {
-		// Wrap text if it's too long
-		wrapped := wrapText(r.label.Text, size.Width, 14)
-		r.text.Text = wrapped
-	}
+	r.text.Text = r.label.Text
 	r.text.Resize(size)
 }
 
 func (r *coloredLabelRenderer) MinSize() fyne.Size {
 	return r.text.MinSize()
-}
-
-func wrapText(text string, maxWidth float32, textSize float32) string {
-	if maxWidth <= 0 || text == "" {
-		return text
-	}
-
-	// Approximate character width for Comic Sans
-	charWidth := textSize * 0.55
-	maxChars := int(maxWidth / charWidth)
-	if maxChars < 3 {
-		maxChars = 3
-	}
-
-	// Handle very long words that exceed maxChars
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return text
-	}
-
-	var lines []string
-	currentLine := ""
-
-	for _, word := range words {
-		// If word itself is too long, break it
-		if len(word) > maxChars {
-			if currentLine != "" {
-				lines = append(lines, currentLine)
-				currentLine = ""
-			}
-			// Break long word into chunks
-			for len(word) > maxChars {
-				lines = append(lines, word[:maxChars])
-				word = word[maxChars:]
-			}
-			if len(word) > 0 {
-				currentLine = word
-			}
-			continue
-		}
-
-		testLine := currentLine
-		if testLine != "" {
-			testLine += " "
-		}
-		testLine += word
-
-		if len(testLine) <= maxChars {
-			currentLine = testLine
-		} else {
-			if currentLine != "" {
-				lines = append(lines, currentLine)
-			}
-			currentLine = word
-		}
-	}
-
-	if currentLine != "" {
-		lines = append(lines, currentLine)
-	}
-
-	return strings.Join(lines, "\n")
 }
 
 // paddedLayout adds uniform padding around content
@@ -190,10 +120,10 @@ func (c *compactVBoxLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 		if !child.Visible() {
 			continue
 		}
-		childSize := child.MinSize()
-		child.Resize(fyne.NewSize(size.Width, childSize.Height))
+		// Pass the full available width to the child so it knows when to wrap
+		child.Resize(fyne.NewSize(size.Width, child.MinSize().Height))
 		child.Move(pos)
-		pos = pos.AddXY(0, childSize.Height+c.spacing)
+		pos = pos.AddXY(0, child.Size().Height+c.spacing)
 	}
 }
 
@@ -229,6 +159,10 @@ type MosuWidget struct {
 	isSelected bool
 	rawText    string
 	cursorPos  int
+
+	cursorVisible bool
+	cursorTicker  *time.Ticker
+	hasFocus      bool
 }
 
 func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
@@ -258,6 +192,18 @@ func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
 	)
 
 	m.container = container.NewStack(m.bg, paddedContent)
+
+	m.cursorTicker = time.NewTicker(500 * time.Millisecond)
+	go func() {
+		for range m.cursorTicker.C {
+			if m.hasFocus {
+				m.cursorVisible = !m.cursorVisible
+				fyne.Do(func() {
+					m.RefreshContent()
+				})
+			}
+		}
+	}()
 
 	return m
 }
@@ -360,7 +306,15 @@ func (r *customCheckRenderer) MinSize() fyne.Size {
 func (m *MosuWidget) RefreshContent() {
 	m.contentVBox.Objects = nil
 
-	lines := strings.Split(m.rawText, "\n")
+	// Inject cursor if focused and visible
+	textToRender := m.rawText
+	if m.hasFocus && m.cursorVisible {
+		if m.cursorPos >= 0 && m.cursorPos <= len(textToRender) {
+			textToRender = textToRender[:m.cursorPos] + "|" + textToRender[m.cursorPos:]
+		}
+	}
+
+	lines := strings.Split(textToRender, "\n")
 	for i, line := range lines {
 		trimLine := strings.TrimSpace(line)
 		lineIdx := i
@@ -445,10 +399,14 @@ func (m *MosuWidget) Tapped(_ *fyne.PointEvent) {
 }
 
 func (m *MosuWidget) FocusGained() {
+	m.hasFocus = true
+	m.cursorVisible = true
+	m.RefreshContent()
 }
 
 func (m *MosuWidget) FocusLost() {
-
+	m.hasFocus = false
+	m.cursorVisible = false
 	m.RefreshContent()
 }
 
@@ -463,6 +421,7 @@ func (m *MosuWidget) TypedRune(r rune) {
 
 	m.rawText = m.rawText[:m.cursorPos] + string(r) + m.rawText[m.cursorPos:]
 	m.cursorPos++
+	m.cursorVisible = true // Keep cursor visible while typing
 
 	m.RefreshContent()
 }
