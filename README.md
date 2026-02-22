@@ -177,7 +177,7 @@ Copyright © 2026 Dibyendu Sahoo
 ## Acknowledgments
 
 - Built with [Fyne](https://fyne.io/) UI framework
-- Inspired by [Forma](https://www.forma.app/) and [Tweek](https://tweek.so/)
+- Inspired by [Forma](https://useforma.app/) and [Tweek](https://tweek.so/)
 - Uses Douglas-Peucker algorithm for stroke simplification
 - Metaball borders powered by Signed Distance Fields
 
