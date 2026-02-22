@@ -21,11 +21,11 @@ Create cards, draw freehand strokes, and organize your thoughts in an infinite s
 
 ## Installation
 
-### Pre-built Binary (Recommended)
+### Pre-built Installer (Recommended)
 
-Download the latest `Mosugo.exe` from the [Releases](https://github.com/F4tal1t/Mosugo/releases) page.
+Download the latest `Mosugo.exe` directly from the official website: [mosugo.dibby.me](https://mosugo.dibby.me)
 
-No installation required — just download and run!
+Alternatively, you can find it on the GitHub [Releases](https://github.com/F4tal1t/Mosugo/releases) page.
 
 ### Build from Source
 
