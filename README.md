@@ -1,8 +1,12 @@
-# Mosugo
+<p align="center">
+  <img width="600" height="250" alt="image" src="https://github.com/user-attachments/assets/1d96ec7f-28b6-49fb-a2bd-ee6acbbe8ddb" />
+</p>
+
+
 
 **Mosugo** is a minimal, spatial notes application built for Windows with Go and Fyne. It combines the infinite creative freedom of a zoomable canvas with the structured simplicity of daily workspaces.
 
-Create cards, draw freehand strokes, and organize your thoughts in an infinite space — with everything automatically saved per day.
+Create cards, draw freehand strokes, and organize your thoughts in an infinite space with everything automatically saved per day.
 
 ## Features
 
