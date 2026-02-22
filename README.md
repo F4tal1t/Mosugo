@@ -58,10 +58,10 @@ fyne package -os windows
 
 | Key | Action |
 |-----|--------|
-| **Numpad 1** | Select Tool (move and select cards) |
-| **Numpad 2** | Card Tool (create new cards) |
-| **Numpad 3** | Draw Tool (freehand drawing) |
-| **Numpad 4** | Erase Tool (remove strokes) |
+| **Numpad 0** | Select Tool (move and select cards) |
+| **Numpad 1** | Card Tool (create new cards) |
+| **Numpad 2** | Draw Tool (freehand drawing) |
+| **Numpad 3** | Erase Tool (remove cards/strokes) |
 
 ### Mouse Controls
 
