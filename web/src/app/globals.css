@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mosugo-bg-light: #E5E5E5;
+  --color-mosugo-accent: #0A192F;
+  --font-sans: var(--font-comic), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+@layer base {
+  body {
+    @apply bg-mosugo-bg-light text-mosugo-accent antialiased selection:bg-mosugo-accent selection:text-white;
+    background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 .5H40M.5 0V40' fill='none' stroke='rgb(10, 25, 47)' stroke-opacity='0.15' stroke-dasharray='4 4'/%3E%3C/svg%3E");
+  }
+}
