@@ -20,11 +20,15 @@ function DownloadIcon() {
   );
 }
 
-function GitBranchIcon() {
+function GitHubIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M4 14h4v2H4zm0 6h4v2H4zm-2-4h2v4H2zm6 0h2v4H8zm8-14h4v2h-4zm0 6h4v2h-4zm-2-4h2v4h-2zm6 0h2v4h-2zm-8 13h5v2h-5zm5-5h2v5h-2zM5 2h2v10H5z" />
-    </svg>
+    <Image src="/github.svg" alt="GitHub icon" width={20} height={20} />
+  );
+}
+
+function StarIcon() {
+  return (
+    <Image src="/star.svg" alt="Star icon" width={16} height={16} />
   );
 }
 
@@ -157,7 +161,7 @@ export default function Home() {
         >
           <div className="absolute inset-0 bg-[var(--color-mosugo-accent)] translate-y-[100%] group-hover:translate-y-0 transition-transform duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]" />
           <span className="relative z-10 text-[var(--color-mosugo-accent)] group-hover:text-white transition-colors duration-300 font-medium text-sm flex items-center gap-2">
-            <GitBranchIcon /> Star on GitHub {stars !== null && <span className="opacity-60 text-xs ml-1 font-bold">{stars}</span>}
+            <GitHubIcon /> Star on GitHub {stars !== null && <span className="opacity-60 text-xs ml-1 font-bold flex items-center gap-1.5"><StarIcon /> {stars}</span>}
           </span>
         </a>
       </nav>
