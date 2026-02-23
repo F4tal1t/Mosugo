@@ -1,5 +1,6 @@
 # Binaries for programs and plugins
 *.exe
+!web/public/*.exe
 *.exe~
 *.dll
 *.so
