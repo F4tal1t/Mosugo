@@ -70,7 +70,7 @@ export default function Home() {
           "-=0.8"
         );
 
-      // Ensure 3D context is ready
+
       gsap.set(appWindowRef.current, { perspective: 1000 });
       gsap.set(".app-window-inner", { transformStyle: "preserve-3d" });
 
@@ -79,7 +79,7 @@ export default function Home() {
     return () => ctx.revert();
   }, []);
 
-  // Magnetic button effect handler
+
   const handleMagneticMove = (e: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
     const element = e.currentTarget;
     const rect = element.getBoundingClientRect();
@@ -109,13 +109,13 @@ export default function Home() {
     if (!appWindowRef.current) return;
     const rect = appWindowRef.current.getBoundingClientRect();
 
-    // Calculate relative mouse position (0 to 1) based on the center of the element
+
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const xMid = rect.width / 2;
     const yMid = rect.height / 2;
 
-    // Calculate rotation (-1 to 1 multiplied by max rotation degrees)
+
     const rotationX = ((y - yMid) / yMid) * -10; // Max tilt up/down (10 deg)
     const rotationY = ((x - xMid) / xMid) * 10;  // Max tilt left/right (10 deg)
 
@@ -165,11 +165,7 @@ export default function Home() {
           </span>
         </a>
       </nav>
-
-      {/* Hero Section - Two Column Layout */}
       <section className="flex-1 w-full max-w-[90rem] mx-auto px-8 flex flex-col lg:flex-row items-center justify-between z-10 gap-16 relative pb-12">
-
-        {/* Left Column: Text Content */}
         <div className="w-full lg:w-[45%] flex flex-col items-start pt-10 lg:pt-0">
           <h1 className="hero-text text-[clamp(1.5rem,5vw,4rem)] leading-[0.9] tracking-[-0.03em] font-medium text-balance mb-8">
             Think Spatial
@@ -197,7 +193,7 @@ export default function Home() {
           </a>
         </div>
 
-        {/* Right Column: High Fidelity Placeholder with 3D Interaction */}
+
         <div
           ref={appWindowRef}
           onMouseMove={handleWindowMove}
@@ -228,7 +224,7 @@ export default function Home() {
               <Image src="/Img.png" alt="App UI" fill className="object-cover object-left-top" />
             </div>
 
-            {/* Ambient Glow behind the window inside */}
+
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-3/4 bg-[var(--color-mosugo-accent)]/5 blur-[100px] rounded-full pointer-events-none z-0" />
           </div>
         </div>
