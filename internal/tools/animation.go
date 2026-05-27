@@ -25,9 +25,11 @@ func AnimateCardBounce(c Canvas, card *cards.MosuWidget) {
 	centerX := targetPos.X + targetSize.Width/2
 	centerY := targetPos.Y + targetSize.Height/2
 
-	card.WorldSize = fyne.NewSize(0, 0)
-	card.WorldPos = fyne.NewPos(centerX, centerY)
-	c.Refresh()
+	fyne.DoAndWait(func() {
+		card.WorldSize = fyne.NewSize(0, 0)
+		card.WorldPos = fyne.NewPos(centerX, centerY)
+		c.Refresh()
+	})
 
 	start := time.Now()
 	duration := 400 * time.Millisecond
@@ -39,9 +41,12 @@ func AnimateCardBounce(c Canvas, card *cards.MosuWidget) {
 		for {
 			t := time.Since(start)
 			if t > duration {
-				card.WorldSize = targetSize
-				card.WorldPos = targetPos
-				c.Refresh()
+				fyne.DoAndWait(func() {
+					card.WorldSize = targetSize
+					card.WorldPos = targetPos
+					c.Refresh()
+					c.MarkDirty()
+				})
 				return
 			}
 
@@ -54,9 +59,11 @@ func AnimateCardBounce(c Canvas, card *cards.MosuWidget) {
 			x := centerX - w/2
 			y := centerY - h/2
 
-			card.WorldSize = fyne.NewSize(w, h)
-			card.WorldPos = fyne.NewPos(x, y)
-			c.Refresh()
+			fyne.DoAndWait(func() {
+				card.WorldSize = fyne.NewSize(w, h)
+				card.WorldPos = fyne.NewPos(x, y)
+				c.Refresh()
+			})
 			<-ticker.C
 		}
 	}()

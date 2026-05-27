@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"mosugo/internal/cards"
+	"mosugo/internal/storage"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -69,6 +70,42 @@ func (m *MockCanvas) ContentContainer() *fyne.Container {
 
 func (m *MockCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
 	m.Called(p1, p2, strokeID)
+}
+
+func (m *MockCanvas) CollectCardData(card *cards.MosuWidget) storage.MosuData {
+	args := m.Called(card)
+	if args.Get(0) == nil {
+		return storage.MosuData{}
+	}
+	return args.Get(0).(storage.MosuData)
+}
+
+func (m *MockCanvas) CollectStrokeDataByID(strokeID int) []storage.StrokeData {
+	args := m.Called(strokeID)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).([]storage.StrokeData)
+}
+
+func (m *MockCanvas) CommitCardCreated(card *cards.MosuWidget) {
+	m.Called(card)
+}
+
+func (m *MockCanvas) CommitCardDeleted(data storage.MosuData) {
+	m.Called(data)
+}
+
+func (m *MockCanvas) CommitCardMoved(card *cards.MosuWidget, before fyne.Position) {
+	m.Called(card, before)
+}
+
+func (m *MockCanvas) CommitStrokeCreated(segments []storage.StrokeData) {
+	m.Called(segments)
+}
+
+func (m *MockCanvas) CommitStrokeDeleted(segments []storage.StrokeData) {
+	m.Called(segments)
 }
 
 func (m *MockCanvas) MarkDirty() {

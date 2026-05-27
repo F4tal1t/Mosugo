@@ -129,9 +129,57 @@ func setupBorderAndCalendar(today time.Time, mosugoCanvas *mosuCanvas.MosugoCanv
 }
 
 func setupKeyboardShortcuts(w fyne.Window, mosugoCanvas *mosuCanvas.MosugoCanvas, metaBorder *ui.MetaballBorder) {
+	undoHandler := func() {
+		if !mosugoCanvas.Undo() {
+			log.Println("Nothing to undo")
+		}
+	}
+	redoHandler := func() {
+		if !mosugoCanvas.Redo() {
+			log.Println("Nothing to redo")
+		}
+	}
+
 	if deskCanvas, ok := w.Canvas().(desktop.Canvas); ok {
+		var controlDown bool
+		var shiftDown bool
+		var superDown bool
+		var zDown bool
+		var yDown bool
+
 		deskCanvas.SetOnKeyDown(func(key *fyne.KeyEvent) {
 			switch key.Name {
+			case desktop.KeyControlLeft, desktop.KeyControlRight:
+				controlDown = true
+				return
+			case desktop.KeyShiftLeft, desktop.KeyShiftRight:
+				shiftDown = true
+				return
+			case desktop.KeySuperLeft, desktop.KeySuperRight:
+				superDown = true
+				return
+			case fyne.KeyZ:
+				if zDown {
+					return
+				}
+				zDown = true
+				if controlDown || superDown {
+					if shiftDown {
+						redoHandler()
+					} else {
+						undoHandler()
+					}
+				}
+				return
+			case fyne.KeyY:
+				if yDown {
+					return
+				}
+				yDown = true
+				if controlDown || superDown {
+					redoHandler()
+				}
+				return
 			case fyne.Key1, "KP1":
 				mosugoCanvas.SetTool(tools.ToolCard)
 				fmt.Println("Tool: Card Mode")
@@ -146,6 +194,21 @@ func setupKeyboardShortcuts(w fyne.Window, mosugoCanvas *mosuCanvas.MosugoCanvas
 				fmt.Println("Tool: Select Mode")
 			case fyne.KeyEscape:
 				mosugoCanvas.SetTool(tools.ToolCard)
+			}
+		})
+
+		deskCanvas.SetOnKeyUp(func(key *fyne.KeyEvent) {
+			switch key.Name {
+			case desktop.KeyControlLeft, desktop.KeyControlRight:
+				controlDown = false
+			case desktop.KeyShiftLeft, desktop.KeyShiftRight:
+				shiftDown = false
+			case desktop.KeySuperLeft, desktop.KeySuperRight:
+				superDown = false
+			case fyne.KeyZ:
+				zDown = false
+			case fyne.KeyY:
+				yDown = false
 			}
 		})
 	}
