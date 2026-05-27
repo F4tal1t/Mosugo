@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 
 	"mosugo/internal/cards"
+	"mosugo/internal/storage"
 	"mosugo/internal/theme"
 )
 
@@ -34,6 +35,13 @@ type Canvas interface {
 	RemoveObject(o fyne.CanvasObject)
 	ContentContainer() *fyne.Container
 	AddStroke(p1, p2 fyne.Position, strokeID int)
+	CollectCardData(card *cards.MosuWidget) storage.MosuData
+	CollectStrokeDataByID(strokeID int) []storage.StrokeData
+	CommitCardCreated(card *cards.MosuWidget)
+	CommitCardDeleted(data storage.MosuData)
+	CommitCardMoved(card *cards.MosuWidget, before fyne.Position)
+	CommitStrokeCreated(segments []storage.StrokeData)
+	CommitStrokeDeleted(segments []storage.StrokeData)
 
 	// Persistence
 	MarkDirty()
@@ -65,6 +73,7 @@ type Tool interface {
 type SelectTool struct {
 	isMovingCard bool
 	rawPos       fyne.Position
+	dragStartPos fyne.Position
 }
 
 func (t *SelectTool) Name() string           { return "Select Tool" }
@@ -127,6 +136,7 @@ func (t *SelectTool) OnDragged(c Canvas, e *fyne.DragEvent) {
 					c.SetSelectedCard(mosuW)
 					mosuW.SetSelected(true)
 					t.isMovingCard = true // Start moving mode
+					t.dragStartPos = mosuW.WorldPos
 					t.rawPos = mosuW.WorldPos
 					break // Found the target
 				}
@@ -171,9 +181,11 @@ func (t *SelectTool) OnDragEnd(c Canvas) {
 		card := c.GetSelectedCard()
 		card.WorldPos.X = c.Snap(card.WorldPos.X)
 		card.WorldPos.Y = c.Snap(card.WorldPos.Y)
+		c.CommitCardMoved(card, t.dragStartPos)
 		c.Refresh()
 	}
 	t.isMovingCard = false
+	t.dragStartPos = fyne.Position{}
 }
 
 type CardTool struct {
@@ -259,16 +271,16 @@ func (t *CardTool) OnDragEnd(c Canvas) {
 
 		cardID := fmt.Sprintf("card_%d", len(c.ContentContainer().Objects))
 		newCard := cards.NewMosuWidget(cardID, theme.CardBg, 0) // colorIndex 0 = default card color
+		newCard.SetOnDirty(c.MarkDirty)
 
 		newCard.WorldPos = fyne.NewPos(c.Snap(worldPos.X), c.Snap(worldPos.Y))
 		newCard.WorldSize = fyne.NewSize(c.SnapUp(worldW), c.SnapUp(worldH))
 		newCard.RefreshContent()
 
 		c.AddObject(newCard)
+		c.CommitCardCreated(newCard)
 
 		AnimateCardBounce(c, newCard)
-
-		c.MarkDirty()
 
 		c.Refresh()
 	}
@@ -360,8 +372,10 @@ func (t *DrawTool) OnDragEnd(c Canvas) {
 			}
 		}
 
+		segments := c.CollectStrokeDataByID(t.currentStrokeID)
+		c.CommitStrokeCreated(segments)
+
 		// Mark canvas as modified
-		c.MarkDirty()
 		c.Refresh()
 	}
 
@@ -404,8 +418,9 @@ func (t *EraseTool) eraseCardAt(c Canvas, screenPos fyne.Position) bool {
 
 			if screenPos.X >= sPos.X && screenPos.X <= sPos.X+sSize.Width &&
 				screenPos.Y >= sPos.Y && screenPos.Y <= sPos.Y+sSize.Height {
+				cardData := c.CollectCardData(mosuW)
 				c.RemoveObject(obj)
-				c.MarkDirty()
+				c.CommitCardDeleted(cardData)
 				c.Refresh()
 				return true
 			}
@@ -428,7 +443,8 @@ func (t *EraseTool) eraseStrokeAt(c Canvas, screenPos fyne.Position) {
 					return
 				}
 
-				t.removeStrokeByID(c, objects, strokeID)
+				segments := c.CollectStrokeDataByID(strokeID)
+				t.removeStrokeByID(c, objects, strokeID, segments)
 				return
 			}
 		}
@@ -437,13 +453,19 @@ func (t *EraseTool) eraseStrokeAt(c Canvas, screenPos fyne.Position) {
 
 func (t *EraseTool) removePairedLines(c Canvas, objects []fyne.CanvasObject, line *canvas.Line) {
 	regularLine, glowLine := t.findPairedLines(c, objects, line)
+	segments := []storage.StrokeData{}
+	if regularLine != nil {
+		if p1, p2, ok := c.GetStrokePoints(regularLine); ok {
+			segments = append(segments, storage.StrokeData{P1X: p1.X, P1Y: p1.Y, P2X: p2.X, P2Y: p2.Y, Width: regularLine.StrokeWidth, StrokeID: 0})
+		}
+	}
 	if regularLine != nil {
 		c.RemoveObject(regularLine)
 	}
 	if glowLine != nil {
 		c.RemoveObject(glowLine)
 	}
-	c.MarkDirty()
+	c.CommitStrokeDeleted(segments)
 	c.Refresh()
 }
 
@@ -475,7 +497,7 @@ func (t *EraseTool) findMatchingLine(objects []fyne.CanvasObject, target *canvas
 	return nil
 }
 
-func (t *EraseTool) removeStrokeByID(c Canvas, objects []fyne.CanvasObject, strokeID int) {
+func (t *EraseTool) removeStrokeByID(c Canvas, objects []fyne.CanvasObject, strokeID int, segments []storage.StrokeData) {
 	toRemove := []fyne.CanvasObject{}
 	for _, o := range objects {
 		if l, ok := o.(*canvas.Line); ok {
@@ -489,7 +511,7 @@ func (t *EraseTool) removeStrokeByID(c Canvas, objects []fyne.CanvasObject, stro
 		c.RemoveObject(o)
 	}
 
-	c.MarkDirty()
+	c.CommitStrokeDeleted(segments)
 	c.Refresh()
 }
 

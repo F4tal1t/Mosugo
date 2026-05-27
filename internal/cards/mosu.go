@@ -160,9 +160,13 @@ type MosuWidget struct {
 	rawText    string
 	cursorPos  int
 
-	cursorVisible bool
-	cursorTicker  *time.Ticker
-	hasFocus      bool
+	cursorVisible   bool
+	cursorTicker    *time.Ticker
+	hasFocus        bool
+	uiReady         bool
+	onDirty         func()
+	onTextCommitted func(before, after string)
+	onShortcut      func(shortcut fyne.Shortcut)
 }
 
 func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
@@ -193,19 +197,30 @@ func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
 
 	m.container = container.NewStack(m.bg, paddedContent)
 
+	return m
+}
+
+func (m *MosuWidget) startCursorTicker() {
+	if m.cursorTicker != nil {
+		return
+	}
+	app := fyne.CurrentApp()
+	if app == nil || app.Driver() == nil {
+		return
+	}
+
 	m.cursorTicker = time.NewTicker(500 * time.Millisecond)
 	go func() {
 		for range m.cursorTicker.C {
-			if m.hasFocus {
+			fyne.Do(func() {
+				if !m.hasFocus {
+					return
+				}
 				m.cursorVisible = !m.cursorVisible
-				fyne.Do(func() {
-					m.RefreshContent()
-				})
-			}
+				m.RefreshContent()
+			})
 		}
 	}()
-
-	return m
 }
 
 // customCheck is a circular checkbox widget
@@ -304,6 +319,10 @@ func (r *customCheckRenderer) MinSize() fyne.Size {
 }
 
 func (m *MosuWidget) RefreshContent() {
+	if !m.uiReady {
+		return
+	}
+
 	m.contentVBox.Objects = nil
 
 	// Inject cursor if focused and visible
@@ -359,6 +378,7 @@ func (m *MosuWidget) toggleLineState(lineIdx int, checked bool) {
 	if lineIdx < 0 || lineIdx >= len(lines) {
 		return
 	}
+	before := m.rawText
 
 	line := lines[lineIdx]
 	trimLine := strings.TrimSpace(line)
@@ -388,6 +408,11 @@ func (m *MosuWidget) toggleLineState(lineIdx int, checked bool) {
 	}
 	lines[lineIdx] = newPrefix + content
 	m.rawText = strings.Join(lines, "\n")
+	if m.onTextCommitted != nil {
+		m.onTextCommitted(before, m.rawText)
+	}
+	m.markDirty()
+	m.RefreshContent()
 }
 
 func (m *MosuWidget) Tapped(_ *fyne.PointEvent) {
@@ -411,6 +436,7 @@ func (m *MosuWidget) FocusLost() {
 }
 
 func (m *MosuWidget) TypedRune(r rune) {
+	before := m.rawText
 
 	if m.cursorPos < 0 {
 		m.cursorPos = 0
@@ -422,6 +448,10 @@ func (m *MosuWidget) TypedRune(r rune) {
 	m.rawText = m.rawText[:m.cursorPos] + string(r) + m.rawText[m.cursorPos:]
 	m.cursorPos++
 	m.cursorVisible = true // Keep cursor visible while typing
+	if m.onTextCommitted != nil {
+		m.onTextCommitted(before, m.rawText)
+	}
+	m.markDirty()
 
 	m.RefreshContent()
 }
@@ -430,18 +460,33 @@ func (m *MosuWidget) TypedKey(key *fyne.KeyEvent) {
 	switch key.Name {
 	case fyne.KeyBackspace:
 		if m.cursorPos > 0 {
+			before := m.rawText
 			m.rawText = m.rawText[:m.cursorPos-1] + m.rawText[m.cursorPos:]
 			m.cursorPos--
+			if m.onTextCommitted != nil {
+				m.onTextCommitted(before, m.rawText)
+			}
+			m.markDirty()
 			m.RefreshContent()
 		}
 	case fyne.KeyDelete:
 		if m.cursorPos < len(m.rawText) {
+			before := m.rawText
 			m.rawText = m.rawText[:m.cursorPos] + m.rawText[m.cursorPos+1:]
+			if m.onTextCommitted != nil {
+				m.onTextCommitted(before, m.rawText)
+			}
+			m.markDirty()
 			m.RefreshContent()
 		}
 	case fyne.KeyReturn:
+		before := m.rawText
 		m.rawText = m.rawText[:m.cursorPos] + "\n" + m.rawText[m.cursorPos:]
 		m.cursorPos++
+		if m.onTextCommitted != nil {
+			m.onTextCommitted(before, m.rawText)
+		}
+		m.markDirty()
 		m.RefreshContent()
 	case fyne.KeyLeft:
 		if m.cursorPos > 0 {
@@ -453,6 +498,12 @@ func (m *MosuWidget) TypedKey(key *fyne.KeyEvent) {
 		}
 	case fyne.KeyUp, fyne.KeyDown, fyne.KeyHome, fyne.KeyEnd:
 
+	}
+}
+
+func (m *MosuWidget) TypedShortcut(shortcut fyne.Shortcut) {
+	if m.onShortcut != nil {
+		m.onShortcut(shortcut)
 	}
 }
 
@@ -470,6 +521,9 @@ func (m *MosuWidget) SetSelected(selected bool) {
 }
 
 func (m *MosuWidget) CreateRenderer() fyne.WidgetRenderer {
+	m.uiReady = true
+	m.startCursorTicker()
+	m.RefreshContent()
 	return widget.NewSimpleRenderer(m.container)
 }
 
@@ -492,4 +546,25 @@ func (m *MosuWidget) GetText() string {
 func (m *MosuWidget) SetText(text string) {
 	m.rawText = text
 	m.cursorPos = len(text)
+}
+
+// SetOnDirty registers a callback that runs whenever the card content changes.
+func (m *MosuWidget) SetOnDirty(callback func()) {
+	m.onDirty = callback
+}
+
+// SetOnTextCommitted registers a callback fired whenever the card text changes.
+func (m *MosuWidget) SetOnTextCommitted(callback func(before, after string)) {
+	m.onTextCommitted = callback
+}
+
+// SetOnShortcut registers a callback for focused keyboard shortcuts.
+func (m *MosuWidget) SetOnShortcut(callback func(shortcut fyne.Shortcut)) {
+	m.onShortcut = callback
+}
+
+func (m *MosuWidget) markDirty() {
+	if m.onDirty != nil {
+		m.onDirty()
+	}
 }

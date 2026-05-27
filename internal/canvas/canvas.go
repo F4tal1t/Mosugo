@@ -48,10 +48,15 @@ func (c *MosugoCanvas) WorldToScreen(pos fyne.Position) fyne.Position {
 	return fyne.NewPos(x, y)
 }
 
-func (c *MosugoCanvas) GetOffset() fyne.Position      { return c.Offset }
-func (c *MosugoCanvas) SetOffset(pos fyne.Position)   { c.Offset = pos }
-func (c *MosugoCanvas) GetScale() float32             { return c.Scale }
-func (c *MosugoCanvas) AddObject(o fyne.CanvasObject) { c.Content.Add(o) }
+func (c *MosugoCanvas) GetOffset() fyne.Position    { return c.Offset }
+func (c *MosugoCanvas) SetOffset(pos fyne.Position) { c.Offset = pos }
+func (c *MosugoCanvas) GetScale() float32           { return c.Scale }
+func (c *MosugoCanvas) AddObject(o fyne.CanvasObject) {
+	if card, ok := o.(*cards.MosuWidget); ok {
+		c.wireCardCallbacks(card)
+	}
+	c.Content.Add(o)
+}
 func (c *MosugoCanvas) RemoveObject(o fyne.CanvasObject) {
 	if line, ok := o.(*canvas.Line); ok {
 		delete(c.strokesMap, line)
@@ -128,9 +133,13 @@ type MosugoCanvas struct {
 	lastScale float32
 
 	// Persistence fields
-	currentDate time.Time
-	isDirty     bool
-	onDirty     func() // Callback when canvas becomes dirty
+	currentDate     time.Time
+	isDirty         bool
+	onDirty         func() // Callback when canvas becomes dirty
+	uiReady         bool
+	suppressHistory bool
+	undoStack       []historyCommand
+	redoStack       []historyCommand
 }
 
 // NewMosugoCanvas creates and initializes a new MosugoCanvas with default settings.
@@ -161,12 +170,14 @@ func NewMosugoCanvas() *MosugoCanvas {
 	c.ghostRect.Hide()
 
 	c.Content.Add(c.ghostRect)
+	c.resetHistory()
 
 	return c
 }
 
 // CreateRenderer creates and returns the widget renderer for the canvas.
 func (c *MosugoCanvas) CreateRenderer() fyne.WidgetRenderer {
+	c.uiReady = true
 	return &mosugoRenderer{canvas: c}
 }
 
@@ -259,6 +270,10 @@ type StrokeCoords struct {
 
 // AddStroke adds a new stroke line to the canvas with the specified coordinates and stroke ID.
 func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
+	c.addStrokeSegmentWithWidth(p1, p2, strokeID, c.StrokeWidth)
+}
+
+func (c *MosugoCanvas) addStrokeSegmentWithWidth(p1, p2 fyne.Position, strokeID int, width float32) {
 	// Defensive check: ensure stroke ID is valid
 	if !c.ValidateStrokeID(strokeID) {
 		// This shouldn't happen, but generate a valid ID if it does
@@ -266,7 +281,7 @@ func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
 	}
 
 	glowLine := canvas.NewLine(theme.GridBg)
-	glowLine.StrokeWidth = c.StrokeWidth * 1.5
+	glowLine.StrokeWidth = width * 1.5
 	glowLine.Position1 = c.WorldToScreen(p1)
 	glowLine.Position2 = c.WorldToScreen(p2)
 	c.Content.Add(glowLine)
@@ -274,7 +289,7 @@ func (c *MosugoCanvas) AddStroke(p1, p2 fyne.Position, strokeID int) {
 	c.glowLines[glowLine] = true
 
 	line := canvas.NewLine(c.StrokeColor)
-	line.StrokeWidth = c.StrokeWidth
+	line.StrokeWidth = width
 	line.Position1 = c.WorldToScreen(p1)
 	line.Position2 = c.WorldToScreen(p2)
 	c.Content.Add(line)
@@ -499,6 +514,10 @@ func (c *MosugoCanvas) DragEnd() {
 
 // MarkDirty marks the canvas as modified and triggers the dirty callback
 func (c *MosugoCanvas) MarkDirty() {
+	c.notifyDirty()
+}
+
+func (c *MosugoCanvas) notifyDirty() {
 	c.isDirty = true
 	if c.onDirty != nil {
 		c.onDirty()
@@ -591,52 +610,36 @@ func (c *MosugoCanvas) LoadWorkspace(date time.Time) error {
 		return err
 	}
 
-	// Clear current canvas
 	c.ClearCanvas()
-
-	// Restore canvas state
 	c.Scale = state.Scale
 	c.Offset = fyne.NewPos(state.OffsetX, state.OffsetY)
 	c.currentDate = date
 
-	// Restore cards
 	for _, cardData := range state.Cards {
-		card := cards.NewMosuWidget(cardData.ID, theme.CardBg, cardData.ColorIdx)
-		card.WorldPos = fyne.NewPos(cardData.PosX, cardData.PosY)
-		card.WorldSize = fyne.NewSize(cardData.Width, cardData.Height)
-		card.CreatedAt = cardData.CreatedAt
-		card.SetText(cardData.Content)
-		card.RefreshContent()
-		c.Content.Add(card)
+		card := c.addCardFromData(cardData)
+		if card != nil {
+			card.RefreshContent()
+		}
 	}
 
-	// Restore strokes
 	maxStrokeID := 0
 	for _, strokeData := range state.Strokes {
-		p1 := fyne.NewPos(strokeData.P1X, strokeData.P1Y)
-		p2 := fyne.NewPos(strokeData.P2X, strokeData.P2Y)
-
-		// Migrate invalid stroke IDs (backward compatibility)
-		strokeID := strokeData.StrokeID
-		if !c.ValidateStrokeID(strokeID) {
-			// Assign new valid ID for corrupted/old strokes
-			strokeID = c.GenerateStrokeID()
-		}
-
-		c.AddStroke(p1, p2, strokeID)
-
-		// Track maximum stroke ID for next ID generation
-		if strokeID > maxStrokeID {
-			maxStrokeID = strokeID
+		c.addStrokeSegmentWithWidth(
+			fyne.NewPos(strokeData.P1X, strokeData.P1Y),
+			fyne.NewPos(strokeData.P2X, strokeData.P2Y),
+			strokeData.StrokeID,
+			strokeData.Width,
+		)
+		if strokeData.StrokeID > maxStrokeID {
+			maxStrokeID = strokeData.StrokeID
 		}
 	}
-
-	// Set next stroke ID to avoid collisions
 	if maxStrokeID >= c.nextStrokeID {
 		c.nextStrokeID = maxStrokeID + 1
 	}
 
 	c.isDirty = false
+	c.resetHistory()
 	c.Refresh()
 	return nil
 }
