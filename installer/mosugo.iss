@@ -1,6 +1,6 @@
 ; filepath: installer/mosugo.iss
 #define MyAppName "Mosugo"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "F4tal1t"
 #define MyAppURL "https://github.com/F4tal1t/Mosugo"
 #define MyAppExeName "Mosugo.exe"
@@ -34,7 +34,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\Mosugo.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\main.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\Mosugo_Icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
