@@ -1,8 +1,6 @@
 package canvas
 
 import (
-	"fmt"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 
@@ -270,7 +268,7 @@ func (c *MosugoCanvas) addCardFromData(data storage.MosuData) *cards.MosuWidget 
 	return card
 }
 
-func (c *MosugoCanvas) removeCardByID(id string) (*cards.MosuWidget, bool) {
+func (c *MosugoCanvas) removeCardByID(id string) {
 	for _, obj := range c.Content.Objects {
 		card, ok := obj.(*cards.MosuWidget)
 		if ok && card.ID == id {
@@ -278,10 +276,9 @@ func (c *MosugoCanvas) removeCardByID(id string) (*cards.MosuWidget, bool) {
 			if c.selectedCard == card {
 				c.selectedCard = nil
 			}
-			return card, true
+			return
 		}
 	}
-	return nil, false
 }
 
 func (c *MosugoCanvas) wireCardCallbacks(card *cards.MosuWidget) {
@@ -352,36 +349,4 @@ func (c *MosugoCanvas) removeStrokeByID(strokeID int) {
 	for _, obj := range objectsToRemove {
 		c.RemoveObject(obj)
 	}
-}
-
-func (c *MosugoCanvas) collectStrokeDataFromObjects(objects []fyne.CanvasObject, strokeID int) []storage.StrokeData {
-	segments := []storage.StrokeData{}
-	for _, obj := range objects {
-		line, ok := obj.(*canvas.Line)
-		if !ok {
-			continue
-		}
-		id, exists := c.GetStrokeID(line)
-		if !exists || id != strokeID || c.IsGlowLine(line) {
-			continue
-		}
-		p1, p2, ok := c.GetStrokePoints(line)
-		if !ok {
-			continue
-		}
-		segments = append(segments, storage.StrokeData{
-			P1X:      p1.X,
-			P1Y:      p1.Y,
-			P2X:      p2.X,
-			P2Y:      p2.Y,
-			ColorIdx: 0,
-			Width:    c.StrokeWidth,
-			StrokeID: strokeID,
-		})
-	}
-	return segments
-}
-
-func (c *MosugoCanvas) describeCommandState() string {
-	return fmt.Sprintf("undo=%d redo=%d", len(c.undoStack), len(c.redoStack))
 }

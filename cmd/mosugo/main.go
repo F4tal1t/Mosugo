@@ -141,76 +141,14 @@ func setupKeyboardShortcuts(w fyne.Window, mosugoCanvas *mosuCanvas.MosugoCanvas
 	}
 
 	if deskCanvas, ok := w.Canvas().(desktop.Canvas); ok {
-		var controlDown bool
-		var shiftDown bool
-		var superDown bool
-		var zDown bool
-		var yDown bool
+		state := &keyboardShortcutState{
+			mosugoCanvas: mosugoCanvas,
+			undoHandler:  undoHandler,
+			redoHandler:  redoHandler,
+		}
 
-		deskCanvas.SetOnKeyDown(func(key *fyne.KeyEvent) {
-			switch key.Name {
-			case desktop.KeyControlLeft, desktop.KeyControlRight:
-				controlDown = true
-				return
-			case desktop.KeyShiftLeft, desktop.KeyShiftRight:
-				shiftDown = true
-				return
-			case desktop.KeySuperLeft, desktop.KeySuperRight:
-				superDown = true
-				return
-			case fyne.KeyZ:
-				if zDown {
-					return
-				}
-				zDown = true
-				if controlDown || superDown {
-					if shiftDown {
-						redoHandler()
-					} else {
-						undoHandler()
-					}
-				}
-				return
-			case fyne.KeyY:
-				if yDown {
-					return
-				}
-				yDown = true
-				if controlDown || superDown {
-					redoHandler()
-				}
-				return
-			case fyne.Key1, "KP1":
-				mosugoCanvas.SetTool(tools.ToolCard)
-				fmt.Println("Tool: Card Mode")
-			case fyne.Key2, "KP2":
-				mosugoCanvas.SetTool(tools.ToolDraw)
-				fmt.Println("Tool: Draw Mode")
-			case fyne.Key3, "KP3":
-				mosugoCanvas.SetTool(tools.ToolErase)
-				fmt.Println("Tool: Erase Mode")
-			case fyne.Key0, "KP0":
-				mosugoCanvas.SetTool(tools.ToolSelect)
-				fmt.Println("Tool: Select Mode")
-			case fyne.KeyEscape:
-				mosugoCanvas.SetTool(tools.ToolCard)
-			}
-		})
-
-		deskCanvas.SetOnKeyUp(func(key *fyne.KeyEvent) {
-			switch key.Name {
-			case desktop.KeyControlLeft, desktop.KeyControlRight:
-				controlDown = false
-			case desktop.KeyShiftLeft, desktop.KeyShiftRight:
-				shiftDown = false
-			case desktop.KeySuperLeft, desktop.KeySuperRight:
-				superDown = false
-			case fyne.KeyZ:
-				zDown = false
-			case fyne.KeyY:
-				yDown = false
-			}
-		})
+		deskCanvas.SetOnKeyDown(state.onKeyDown)
+		deskCanvas.SetOnKeyUp(state.onKeyUp)
 	}
 
 	ctrlS := &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}
@@ -255,6 +193,105 @@ func setupKeyboardShortcuts(w fyne.Window, mosugoCanvas *mosuCanvas.MosugoCanvas
 
 		fmt.Println("Navigated to:", nextDay.Format("2006-01-02"))
 	})
+}
+
+type keyboardShortcutState struct {
+	mosugoCanvas *mosuCanvas.MosugoCanvas
+	undoHandler  func()
+	redoHandler  func()
+	controlDown  bool
+	shiftDown    bool
+	superDown    bool
+	zDown        bool
+	yDown        bool
+}
+
+func (s *keyboardShortcutState) onKeyDown(key *fyne.KeyEvent) {
+	if s.handleModifierDown(key.Name) || s.handleUndoRedoDown(key.Name) || s.handleToolDown(key.Name) {
+		return
+	}
+}
+
+func (s *keyboardShortcutState) onKeyUp(key *fyne.KeyEvent) {
+	switch key.Name {
+	case desktop.KeyControlLeft, desktop.KeyControlRight:
+		s.controlDown = false
+	case desktop.KeyShiftLeft, desktop.KeyShiftRight:
+		s.shiftDown = false
+	case desktop.KeySuperLeft, desktop.KeySuperRight:
+		s.superDown = false
+	case fyne.KeyZ:
+		s.zDown = false
+	case fyne.KeyY:
+		s.yDown = false
+	}
+}
+
+func (s *keyboardShortcutState) handleModifierDown(keyName fyne.KeyName) bool {
+	switch keyName {
+	case desktop.KeyControlLeft, desktop.KeyControlRight:
+		s.controlDown = true
+		return true
+	case desktop.KeyShiftLeft, desktop.KeyShiftRight:
+		s.shiftDown = true
+		return true
+	case desktop.KeySuperLeft, desktop.KeySuperRight:
+		s.superDown = true
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *keyboardShortcutState) handleUndoRedoDown(keyName fyne.KeyName) bool {
+	switch keyName {
+	case fyne.KeyZ:
+		if s.zDown {
+			return true
+		}
+		s.zDown = true
+		if s.controlDown || s.superDown {
+			if s.shiftDown {
+				s.redoHandler()
+			} else {
+				s.undoHandler()
+			}
+		}
+		return true
+	case fyne.KeyY:
+		if s.yDown {
+			return true
+		}
+		s.yDown = true
+		if s.controlDown || s.superDown {
+			s.redoHandler()
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *keyboardShortcutState) handleToolDown(keyName fyne.KeyName) bool {
+	tool, ok := toolShortcutMap[keyName]
+	if !ok {
+		return false
+	}
+	s.mosugoCanvas.SetTool(tool)
+	fmt.Println("Tool:", tool)
+	return true
+}
+
+var toolShortcutMap = map[fyne.KeyName]tools.ToolType{
+	fyne.Key1:           tools.ToolCard,
+	fyne.Key2:           tools.ToolDraw,
+	fyne.Key3:           tools.ToolErase,
+	fyne.Key0:           tools.ToolSelect,
+	fyne.KeyEscape:      tools.ToolCard,
+	fyne.KeyName("KP1"): tools.ToolCard,
+	fyne.KeyName("KP2"): tools.ToolDraw,
+	fyne.KeyName("KP3"): tools.ToolErase,
+	fyne.KeyName("KP0"): tools.ToolSelect,
 }
 
 func main() {
