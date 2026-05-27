@@ -221,7 +221,12 @@ export default function Home() {
             </div>
 
             <div className="relative w-full h-full pt-10">
-              <Image src="/Img.png" alt="App UI" fill className="object-cover object-left-top" />
+              <Image
+                src="/Img.png"
+                alt="App UI"
+                fill
+                className="object-cover object-left-top lg:translate-x-10 xl:translate-x-14"
+              />
             </div>
 
 
