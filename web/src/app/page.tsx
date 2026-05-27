@@ -198,7 +198,7 @@ export default function Home() {
           ref={appWindowRef}
           onMouseMove={handleWindowMove}
           onMouseLeave={handleWindowLeave}
-          className="w-full lg:w-[55%] h-[50vh] lg:h-[75vh] relative flex items-center justify-center -mr-12 lg:-mr-24"
+          className="w-full lg:w-[55%] h-[50vh] lg:h-[75vh] relative flex items-center justify-center -mr-12 lg:-mr-40 xl:-mr-56"
         >
           <div className="app-window-inner w-full h-full bg-mosugo-accent border border-[var(--color-mosugo-accent)]/15 backdrop-blur-2xl rounded-l-3xl shadow-[-20px_0_60px_rgba(10,25,47,0.08)] flex items-center justify-center overflow-hidden z-20 relative">
 
@@ -225,7 +225,7 @@ export default function Home() {
                 src="/Img.png"
                 alt="App UI"
                 fill
-                className="object-cover object-left-top lg:translate-x-10 xl:translate-x-14"
+                className="object-cover object-left-top"
               />
             </div>
 
