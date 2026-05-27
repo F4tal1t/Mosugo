@@ -197,10 +197,22 @@ func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
 
 	m.container = container.NewStack(m.bg, paddedContent)
 
+	return m
+}
+
+func (m *MosuWidget) startCursorTicker() {
+	if m.cursorTicker != nil {
+		return
+	}
+	app := fyne.CurrentApp()
+	if app == nil || app.Driver() == nil {
+		return
+	}
+
 	m.cursorTicker = time.NewTicker(500 * time.Millisecond)
 	go func() {
 		for range m.cursorTicker.C {
-			fyne.DoAndWait(func() {
+			fyne.Do(func() {
 				if !m.hasFocus {
 					return
 				}
@@ -209,8 +221,6 @@ func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
 			})
 		}
 	}()
-
-	return m
 }
 
 // customCheck is a circular checkbox widget
@@ -512,6 +522,7 @@ func (m *MosuWidget) SetSelected(selected bool) {
 
 func (m *MosuWidget) CreateRenderer() fyne.WidgetRenderer {
 	m.uiReady = true
+	m.startCursorTicker()
 	m.RefreshContent()
 	return widget.NewSimpleRenderer(m.container)
 }
