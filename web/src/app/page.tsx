@@ -179,7 +179,7 @@ export default function Home() {
           </p>
 
           <a
-            href="/Mosugo-Setup-1.0.2.exe"
+            href="/Mosugo-Setup-1.1.0.exe"
             download
             onMouseMove={handleMagneticMove}
             onMouseLeave={handleMagneticLeave}
