@@ -4,7 +4,7 @@ package testutil
 import (
 	"time"
 
-	"mosugo/internal/storage"
+	"github.com/F4tal1t/Mosugo/internal/storage"
 
 	"fyne.io/fyne/v2"
 )

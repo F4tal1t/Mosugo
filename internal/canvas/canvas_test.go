@@ -3,7 +3,7 @@ package canvas
 import (
 	"testing"
 
-	"mosugo/internal/testutil"
+	"github.com/F4tal1t/Mosugo/internal/testutil"
 
 	"fyne.io/fyne/v2"
 	"github.com/stretchr/testify/assert"

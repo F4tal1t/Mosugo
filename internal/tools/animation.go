@@ -3,7 +3,7 @@ package tools
 import (
 	"time"
 
-	"mosugo/internal/cards"
+	"github.com/F4tal1t/Mosugo/internal/cards"
 
 	"fyne.io/fyne/v2"
 )

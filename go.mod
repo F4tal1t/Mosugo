@@ -1,4 +1,4 @@
-module mosugo
+module github.com/F4tal1t/Mosugo
 
 go 1.23.2
 

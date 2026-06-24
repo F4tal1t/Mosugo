@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
-	"mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/theme"
 )
 
 // coloredLabel creates a label with custom text color and wrapping
@@ -156,12 +156,14 @@ type MosuWidget struct {
 	contentVBox *fyne.Container
 	container   *fyne.Container
 
-	isSelected bool
-	rawText    string
-	cursorPos  int
+	isSelected  bool
+	rawText     string
+	cursorPos   int
+	cursorLine  int // cached line index where cursor currently is
 
 	cursorVisible   bool
 	cursorTicker    *time.Ticker
+	cursorLabel     *coloredLabel // label on the cursor line, for direct text toggle
 	hasFocus        bool
 	uiReady         bool
 	onDirty         func()
@@ -185,6 +187,7 @@ func NewMosuWidget(id string, c color.Color, colorIndex int) *MosuWidget {
 
 	m.rawText = ""
 	m.cursorPos = 0
+	m.cursorLine = 0
 	m.contentVBox = container.NewVBox()
 	m.contentVBox.Layout = &compactVBoxLayout{spacing: 2}
 
@@ -217,10 +220,43 @@ func (m *MosuWidget) startCursorTicker() {
 					return
 				}
 				m.cursorVisible = !m.cursorVisible
-				m.RefreshContent()
+				m.toggleCursorChar()
 			})
 		}
 	}()
+}
+
+// toggleCursorChar adds or removes the cursor character from the cursor line label,
+// without rebuilding the entire content VBox.
+func (m *MosuWidget) toggleCursorChar() {
+	if m.cursorLabel == nil || m.cursorLine < 0 {
+		return
+	}
+
+	lines := strings.Split(m.rawText, "\n")
+	if m.cursorLine >= len(lines) {
+		return
+	}
+
+	originalLine := lines[m.cursorLine]
+
+	// Remove any existing cursor marker to get the clean line
+	cleanLine := strings.ReplaceAll(originalLine, "|", "")
+
+	if m.cursorVisible {
+		// Insert cursor at the correct column position
+		// Calculate the column on this line
+		textBefore := m.rawText[:m.cursorPos]
+		preLines := strings.Split(textBefore, "\n")
+		col := len(preLines[len(preLines)-1])
+		if col > len(cleanLine) {
+			col = len(cleanLine)
+		}
+		cleanLine = cleanLine[:col] + "|" + cleanLine[col:]
+	}
+
+	m.cursorLabel.Text = cleanLine
+	m.cursorLabel.Refresh()
 }
 
 // customCheck is a circular checkbox widget
@@ -324,14 +360,9 @@ func (m *MosuWidget) RefreshContent() {
 	}
 
 	m.contentVBox.Objects = nil
+	m.cursorLabel = nil
 
-	// Inject cursor if focused and visible
 	textToRender := m.rawText
-	if m.hasFocus && m.cursorVisible {
-		if m.cursorPos >= 0 && m.cursorPos <= len(textToRender) {
-			textToRender = textToRender[:m.cursorPos] + "|" + textToRender[m.cursorPos:]
-		}
-	}
 
 	lines := strings.Split(textToRender, "\n")
 	for i, line := range lines {
@@ -361,16 +392,40 @@ func (m *MosuWidget) RefreshContent() {
 			label := newColoredLabel("• "+labelTxt, theme.InkWhite)
 			m.contentVBox.Add(label)
 		} else if trimLine != "" {
-			// Regular text
+			// Regular text — store reference if this is the cursor line
 			label := newColoredLabel(line, theme.InkWhite)
+			if i == m.cursorLine {
+				m.cursorLabel = label
+			}
 			m.contentVBox.Add(label)
 		} else {
 			// Empty line - add small spacer
 			spacer := newColoredLabel(" ", theme.InkWhite)
+			if i == m.cursorLine {
+				m.cursorLabel = spacer
+			}
 			m.contentVBox.Add(spacer)
 		}
 	}
 	m.contentVBox.Refresh()
+
+	// If focused and cursor should be visible, inject it into the cursor label
+	if m.hasFocus && m.cursorVisible && m.cursorLabel != nil {
+		cleanLine := strings.ReplaceAll(m.cursorLabel.Text, "|", "")
+		textBefore := m.rawText[:m.cursorPos]
+		preLines := strings.Split(textBefore, "\n")
+		col := len(preLines[len(preLines)-1])
+		if col > len(cleanLine) {
+			col = len(cleanLine)
+		}
+		m.cursorLabel.Text = cleanLine[:col] + "|" + cleanLine[col:]
+	}
+}
+
+func (m *MosuWidget) updateCursorLine() {
+	textBefore := m.rawText[:m.cursorPos]
+	lines := strings.Split(textBefore, "\n")
+	m.cursorLine = len(lines) - 1
 }
 
 func (m *MosuWidget) toggleLineState(lineIdx int, checked bool) {
@@ -426,12 +481,15 @@ func (m *MosuWidget) Tapped(_ *fyne.PointEvent) {
 func (m *MosuWidget) FocusGained() {
 	m.hasFocus = true
 	m.cursorVisible = true
+	m.updateCursorLine()
 	m.RefreshContent()
+	m.toggleCursorChar() // eagerly show cursor without waiting for ticker
 }
 
 func (m *MosuWidget) FocusLost() {
 	m.hasFocus = false
 	m.cursorVisible = false
+	m.cursorLabel = nil
 	m.RefreshContent()
 }
 
@@ -448,6 +506,7 @@ func (m *MosuWidget) TypedRune(r rune) {
 	m.rawText = m.rawText[:m.cursorPos] + string(r) + m.rawText[m.cursorPos:]
 	m.cursorPos++
 	m.cursorVisible = true // Keep cursor visible while typing
+	m.updateCursorLine()
 	if m.onTextCommitted != nil {
 		m.onTextCommitted(before, m.rawText)
 	}
@@ -457,47 +516,59 @@ func (m *MosuWidget) TypedRune(r rune) {
 }
 
 func (m *MosuWidget) TypedKey(key *fyne.KeyEvent) {
+	updated := false
 	switch key.Name {
 	case fyne.KeyBackspace:
 		if m.cursorPos > 0 {
 			before := m.rawText
 			m.rawText = m.rawText[:m.cursorPos-1] + m.rawText[m.cursorPos:]
 			m.cursorPos--
+			updated = true
 			if m.onTextCommitted != nil {
 				m.onTextCommitted(before, m.rawText)
 			}
 			m.markDirty()
-			m.RefreshContent()
 		}
 	case fyne.KeyDelete:
 		if m.cursorPos < len(m.rawText) {
 			before := m.rawText
 			m.rawText = m.rawText[:m.cursorPos] + m.rawText[m.cursorPos+1:]
+			updated = true
 			if m.onTextCommitted != nil {
 				m.onTextCommitted(before, m.rawText)
 			}
 			m.markDirty()
-			m.RefreshContent()
 		}
 	case fyne.KeyReturn:
 		before := m.rawText
 		m.rawText = m.rawText[:m.cursorPos] + "\n" + m.rawText[m.cursorPos:]
 		m.cursorPos++
+		updated = true
 		if m.onTextCommitted != nil {
 			m.onTextCommitted(before, m.rawText)
 		}
 		m.markDirty()
-		m.RefreshContent()
 	case fyne.KeyLeft:
 		if m.cursorPos > 0 {
 			m.cursorPos--
 		}
+		m.updateCursorLine()
+		m.RefreshContent()
+		return
 	case fyne.KeyRight:
 		if m.cursorPos < len(m.rawText) {
 			m.cursorPos++
 		}
+		m.updateCursorLine()
+		m.RefreshContent()
+		return
 	case fyne.KeyUp, fyne.KeyDown, fyne.KeyHome, fyne.KeyEnd:
+		return
+	}
 
+	if updated {
+		m.updateCursorLine()
+		m.RefreshContent()
 	}
 }
 
@@ -546,6 +617,7 @@ func (m *MosuWidget) GetText() string {
 func (m *MosuWidget) SetText(text string) {
 	m.rawText = text
 	m.cursorPos = len(text)
+	m.updateCursorLine()
 }
 
 // SetOnDirty registers a callback that runs whenever the card content changes.

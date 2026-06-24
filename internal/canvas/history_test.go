@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"mosugo/internal/cards"
-	"mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/cards"
+	"github.com/F4tal1t/Mosugo/internal/theme"
 )
 
 func countStrokeLines(c *MosugoCanvas, strokeID int) int {

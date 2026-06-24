@@ -11,9 +11,9 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
 
-	"mosugo/internal/cards"
-	"mosugo/internal/storage"
-	"mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/cards"
+	"github.com/F4tal1t/Mosugo/internal/storage"
+	"github.com/F4tal1t/Mosugo/internal/theme"
 )
 
 type Canvas interface {

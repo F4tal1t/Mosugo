@@ -4,9 +4,9 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 
-	"mosugo/internal/cards"
-	"mosugo/internal/storage"
-	"mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/cards"
+	"github.com/F4tal1t/Mosugo/internal/storage"
+	"github.com/F4tal1t/Mosugo/internal/theme"
 )
 
 type historyCommand interface {

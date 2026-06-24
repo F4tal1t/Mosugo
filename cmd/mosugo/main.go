@@ -15,11 +15,11 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"mosugo/assets"
-	mosuCanvas "mosugo/internal/canvas"
-	"mosugo/internal/theme"
-	"mosugo/internal/tools"
-	"mosugo/internal/ui"
+	"github.com/F4tal1t/Mosugo/assets"
+	mosuCanvas "github.com/F4tal1t/Mosugo/internal/canvas"
+	"github.com/F4tal1t/Mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/tools"
+	"github.com/F4tal1t/Mosugo/internal/ui"
 )
 
 const (

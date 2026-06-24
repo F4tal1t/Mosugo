@@ -11,8 +11,8 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"mosugo/internal/storage"
-	"mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/storage"
+	"github.com/F4tal1t/Mosugo/internal/theme"
 )
 
 // tappableButton is a custom button with reduced height

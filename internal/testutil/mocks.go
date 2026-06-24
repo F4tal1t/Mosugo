@@ -1,8 +1,8 @@
 package testutil
 
 import (
-	"mosugo/internal/cards"
-	"mosugo/internal/storage"
+	"github.com/F4tal1t/Mosugo/internal/cards"
+	"github.com/F4tal1t/Mosugo/internal/storage"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"

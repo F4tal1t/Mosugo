@@ -5,7 +5,7 @@ package theme
 
 import (
 	"image/color"
-	"mosugo/assets"
+	"github.com/F4tal1t/Mosugo/assets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"

@@ -15,10 +15,10 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
-	"mosugo/internal/cards"
-	"mosugo/internal/storage"
-	"mosugo/internal/theme"
-	"mosugo/internal/tools"
+	"github.com/F4tal1t/Mosugo/internal/cards"
+	"github.com/F4tal1t/Mosugo/internal/storage"
+	"github.com/F4tal1t/Mosugo/internal/theme"
+	"github.com/F4tal1t/Mosugo/internal/tools"
 )
 
 const (

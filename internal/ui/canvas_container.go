@@ -15,7 +15,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
-	"mosugo/internal/tools"
+	"github.com/F4tal1t/Mosugo/internal/tools"
 )
 
 type invisibleTappable struct {

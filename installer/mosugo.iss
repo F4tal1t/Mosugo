@@ -3,7 +3,7 @@
 #define MyAppVersion "1.0.2"
 #define MyAppPublisher "F4tal1t"
 #define MyAppURL "https://github.com/F4tal1t/Mosugo"
-#define MyAppExeName "Mosugo.exe"
+#define MyAppExeName "main.exe"
 
 [Setup]
 AppId={{A8B7C6D5-E4F3-2G1H-0I9J-8K7L6M5N4O3P}}
